@@ -7,6 +7,7 @@ import { riversideAssets, riversideFeed } from "@/data/workspace-data";
 import { journalFeed } from "@/data/journal-data";
 import { wallAssets, wallZones } from "@/data/wall-data";
 import { deckSlides } from "@/data/deck-data";
+import AgentInputBar from "@/components/workspace/AgentInputBar";
 
 import WorkspaceNav from "@/components/workspace/WorkspaceNav";
 import ProjectBrief from "@/components/workspace/ProjectBrief";
@@ -84,11 +85,10 @@ const JournalView = () => {
       </div>
       <div className="shrink-0 bg-background" style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }}>
         <div className="max-w-[800px] mx-auto px-6 py-3">
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Direct the agent..."
-            className="w-full bg-transparent text-[14px] placeholder:text-muted-foreground/40 focus:outline-none font-sans"
+          <AgentInputBar
+            input={input}
+            onInputChange={setInput}
+            onSubmit={(text) => { setInput(""); }}
           />
         </div>
       </div>
