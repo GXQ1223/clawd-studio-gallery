@@ -3,6 +3,7 @@ import { useParams, Navigate, useNavigate } from "react-router-dom";
 import { projects } from "@/data/projects";
 import { journalFeed, type JournalEntry } from "@/data/journal-data";
 import { ArrowLeft } from "lucide-react";
+import AgentInputBar, { type Attachment } from "@/components/workspace/AgentInputBar";
 
 /* ── Visual placeholders (reused patterns) ── */
 
@@ -151,16 +152,15 @@ const ProjectJournal = () => {
 
   if (!project) return <Navigate to="/" replace />;
 
-  const handleSubmit = () => {
-    if (!input.trim()) return;
+  const handleSubmit = (text: string, _attachments: Attachment[]) => {
+    if (!text.trim() && _attachments.length === 0) return;
     const now = new Date();
     const time = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
     setEntries((prev) => [
       ...prev,
-      { id: `u-${Date.now()}`, type: "user" as const, time, text: input },
+      { id: `u-${Date.now()}`, type: "user" as const, time, text: text || "(image attachment)" },
     ]);
     setInput("");
-    // Simulate agent response
     setTimeout(() => {
       setEntries((prev) => [
         ...prev,
@@ -240,43 +240,13 @@ const ProjectJournal = () => {
 
       {/* Fixed bottom input */}
       <div className="shrink-0 bg-background" style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }}>
-        <div className="max-w-[800px] mx-auto px-6 py-3 space-y-2">
-          {/* Suggestion chips */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {suggestions.map((s) => (
-              <button
-                key={s}
-                onClick={() => setInput(s)}
-                className="px-2 py-0.5 font-mono text-[10px] text-muted-foreground gallery-border hover:text-foreground transition-colors"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-          {/* Input row */}
-          <div className="flex items-center gap-3">
-            {/* Mic */}
-            <button className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" x2="12" y1="19" y2="22" />
-              </svg>
-            </button>
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              placeholder="Direct the agent..."
-              className="flex-1 bg-transparent text-[14px] placeholder:text-muted-foreground/40 focus:outline-none font-sans"
-            />
-            {/* Attach */}
-            <button className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
-              </svg>
-            </button>
-          </div>
+        <div className="max-w-[800px] mx-auto px-6 py-3">
+          <AgentInputBar
+            input={input}
+            onInputChange={setInput}
+            onSubmit={handleSubmit}
+            suggestions={suggestions}
+          />
         </div>
       </div>
     </div>

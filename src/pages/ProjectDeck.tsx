@@ -9,6 +9,7 @@ import {
   type DeckSlide,
 } from "@/data/deck-data";
 import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import AgentInputBar from "@/components/workspace/AgentInputBar";
 
 /* ═══════════════════════════════════════════
    SLIDE RENDERERS — each at 1920×1080 coords
@@ -438,19 +439,12 @@ const ProjectDeck = () => {
           </span>
         </div>
         <div style={{ width: 1, height: 20, background: "rgba(0,0,0,0.08)" }} />
-        <div className="flex items-center gap-2 w-[280px]">
-          <button className="shrink-0 text-muted-foreground hover:text-foreground transition-colors">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-              <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-              <line x1="12" x2="12" y1="19" y2="22" />
-            </svg>
-          </button>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Direct the agent..."
-            className="flex-1 bg-transparent text-[12px] placeholder:text-muted-foreground/40 focus:outline-none font-mono"
+        <div className="w-[280px]">
+          <AgentInputBar
+            input={input}
+            onInputChange={setInput}
+            onSubmit={(text) => { setInput(""); }}
+            inline
           />
         </div>
       </div>
