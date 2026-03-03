@@ -1,9 +1,16 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-const tabs = ["Projects", "Library", "Inspiration", "Sourcing"];
+const tabs = ["Projects", "Library", "Inspiration", "Sourcing", "Compare"];
 
 const TopNav = () => {
   const [activeTab, setActiveTab] = useState("Projects");
+  const navigate = useNavigate();
+
+  const handleTabClick = (tab: string) => {
+    setActiveTab(tab);
+    if (tab === "Compare") navigate("/mvp");
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 h-[48px] bg-background flex items-center px-5 gallery-border border-t-0 border-l-0 border-r-0">
@@ -17,7 +24,7 @@ const TopNav = () => {
         {tabs.map((tab) => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => handleTabClick(tab)}
             className={`text-[13px] font-sans transition-colors ${
               activeTab === tab
                 ? "text-foreground font-medium"
