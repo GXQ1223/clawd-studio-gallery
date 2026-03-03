@@ -9,6 +9,7 @@ import ProjectJournal from "./pages/ProjectJournal";
 import ProjectWall from "./pages/ProjectWall";
 import ProjectDeck from "./pages/ProjectDeck";
 import NotFound from "./pages/NotFound";
+import MvpCompare from "./pages/MvpCompare";
 
 const queryClient = new QueryClient();
 
@@ -24,6 +25,7 @@ const App = () => (
           <Route path="/workspace/journal/:id" element={<ProjectJournal />} />
           <Route path="/workspace/wall/:id" element={<ProjectWall />} />
           <Route path="/workspace/deck/:id" element={<ProjectDeck />} />
+          <Route path="/mvp" element={<MvpCompare />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
