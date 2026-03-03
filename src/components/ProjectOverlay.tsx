@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import type { Project } from "@/data/projects";
 
@@ -8,6 +9,7 @@ interface ProjectOverlayProps {
 }
 
 const ProjectOverlay = ({ project, onClose }: ProjectOverlayProps) => {
+  const navigate = useNavigate();
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -101,7 +103,10 @@ const ProjectOverlay = ({ project, onClose }: ProjectOverlayProps) => {
 
           {/* Actions */}
           <div className="flex items-center gap-2 pt-1">
-            <button className="h-[34px] px-4 bg-foreground text-background text-[12px] font-medium hover:opacity-90 transition-opacity">
+            <button
+              onClick={() => { onClose(); navigate(`/project/${project.id}`); }}
+              className="h-[34px] px-4 bg-foreground text-background text-[12px] font-medium hover:opacity-90 transition-opacity"
+            >
               Open Project
             </button>
             <button className="h-[34px] px-4 gallery-border text-[12px] font-medium hover:bg-secondary transition-colors">
