@@ -1,0 +1,167 @@
+import { useState } from "react";
+import type { Asset } from "@/data/workspace-data";
+
+interface Props {
+  assets: Asset[];
+  activeFolder: string | null;
+}
+
+const categoryGradients: Record<string, { bg: string; style: string }> = {
+  perspective: { bg: "linear-gradient(135deg, #c9c0b4 0%, #a89880 100%)", style: "render" },
+  plan: { bg: "#fafafa", style: "plan" },
+  sketch: { bg: "#f5f3f0", style: "sketch" },
+  elevation: { bg: "#fafafa", style: "elevation" },
+  section: { bg: "#fafafa", style: "elevation" },
+  "model photo": { bg: "linear-gradient(135deg, #c4c8cc 0%, #9aa0a8 100%)", style: "render" },
+  "3d model": { bg: "linear-gradient(135deg, #c2cac0 0%, #96a892 100%)", style: "render" },
+  misc: { bg: "#f0f0f0", style: "render" },
+};
+
+const AssetCell = ({ asset }: { asset: Asset }) => {
+  const [hovered, setHovered] = useState(false);
+  const cat = categoryGradients[asset.category] || categoryGradients.misc;
+
+  return (
+    <div
+      className="relative overflow-hidden cursor-pointer group"
+      style={{ aspectRatio: asset.category === "plan" ? "1" : "4/3" }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {/* Visual placeholder */}
+      <div className="absolute inset-0" style={{ background: cat.bg }}>
+        {cat.style === "plan" && <PlanLines />}
+        {cat.style === "sketch" && <SketchLines />}
+        {cat.style === "elevation" && <ElevationLines />}
+      </div>
+
+      {/* AI badge */}
+      {asset.aiGenerated && (
+        <div className="absolute top-2 right-2 text-[14px] opacity-60 select-none">★</div>
+      )}
+
+      {/* Hover info */}
+      <div
+        className="absolute inset-0 flex flex-col justify-end p-3 transition-opacity duration-200"
+        style={{
+          opacity: hovered ? 1 : 0,
+          background: "linear-gradient(to top, rgba(0,0,0,0.45) 0%, transparent 60%)",
+        }}
+      >
+        <span className="font-mono text-[10px] text-white/90">{asset.category}</span>
+        <span className="font-mono text-[9px] text-white/60 mt-0.5">{asset.date}</span>
+        {asset.aiGenerated && (
+          <span className="font-mono text-[9px] text-amber-300/80 mt-0.5">ai generated</span>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const PlanLines = () => (
+  <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
+    {/* Grid */}
+    {Array.from({ length: 8 }).map((_, i) => (
+      <line key={`v${i}`} x1={`${(i + 1) * 12.5}%`} y1="10%" x2={`${(i + 1) * 12.5}%`} y2="90%" stroke="rgba(0,0,0,0.06)" strokeWidth="0.5" />
+    ))}
+    {Array.from({ length: 8 }).map((_, i) => (
+      <line key={`h${i}`} x1="10%" y1={`${(i + 1) * 12.5}%`} x2="90%" y2={`${(i + 1) * 12.5}%`} stroke="rgba(0,0,0,0.06)" strokeWidth="0.5" />
+    ))}
+    {/* Room outline */}
+    <rect x="15%" y="15%" width="70%" height="55%" fill="none" stroke="rgba(0,0,0,0.25)" strokeWidth="1.5" />
+    <rect x="15%" y="15%" width="40%" height="30%" fill="none" stroke="rgba(0,0,0,0.15)" strokeWidth="1" />
+    <line x1="55%" y1="15%" x2="55%" y2="45%" stroke="rgba(0,0,0,0.15)" strokeWidth="1" />
+    {/* Door arc */}
+    <path d="M 55% 70% Q 65% 70% 65% 60%" fill="none" stroke="rgba(0,0,0,0.12)" strokeWidth="0.8" strokeDasharray="3 2" />
+  </svg>
+);
+
+const SketchLines = () => (
+  <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
+    {Array.from({ length: 12 }).map((_, i) => (
+      <line
+        key={i}
+        x1={`${10 + i * 7}%`}
+        y1={`${15 + Math.sin(i) * 10}%`}
+        x2={`${15 + i * 7}%`}
+        y2={`${75 + Math.cos(i) * 8}%`}
+        stroke="rgba(0,0,0,0.06)"
+        strokeWidth="1"
+        strokeLinecap="round"
+      />
+    ))}
+    <path d="M 20% 60% Q 40% 30% 60% 55% T 85% 40%" fill="none" stroke="rgba(0,0,0,0.1)" strokeWidth="1.2" />
+  </svg>
+);
+
+const ElevationLines = () => (
+  <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
+    {Array.from({ length: 6 }).map((_, i) => (
+      <line
+        key={i}
+        x1="12%"
+        y1={`${20 + i * 12}%`}
+        x2="88%"
+        y2={`${20 + i * 12}%`}
+        stroke="rgba(0,0,0,0.08)"
+        strokeWidth="0.8"
+      />
+    ))}
+    <rect x="25%" y="32%" width="20%" height="32%" fill="none" stroke="rgba(0,0,0,0.12)" strokeWidth="1" />
+    <rect x="55%" y="32%" width="20%" height="32%" fill="none" stroke="rgba(0,0,0,0.12)" strokeWidth="1" />
+  </svg>
+);
+
+const categories = ["all", "perspective", "plan", "sketch", "elevation", "section", "model photo", "3d model", "misc"];
+
+const AssetGallery = ({ assets, activeFolder }: Props) => {
+  const [localFilter, setLocalFilter] = useState<string | null>(null);
+  const effectiveFilter = activeFolder || localFilter;
+
+  const filtered = effectiveFilter
+    ? assets.filter((a) => a.category === effectiveFilter)
+    : assets;
+
+  return (
+    <div className="flex-1 min-w-0 h-full overflow-y-auto px-4 py-4">
+      {/* Filter pills */}
+      <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            onClick={() => setLocalFilter(cat === "all" ? null : cat)}
+            className={`px-2 py-0.5 font-mono text-[11px] transition-colors ${
+              (cat === "all" && !effectiveFilter) || effectiveFilter === cat
+                ? "bg-foreground text-background"
+                : "text-muted-foreground hover:text-foreground gallery-border"
+            }`}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {/* Masonry grid */}
+      <div className="columns-3 gap-[2px]" style={{ columnFill: "balance" }}>
+        {filtered.map((asset) => (
+          <div key={asset.id} className="mb-[2px] break-inside-avoid">
+            <AssetCell asset={asset} />
+          </div>
+        ))}
+
+        {/* Drop zone */}
+        <div
+          className="mb-[2px] break-inside-avoid flex items-center justify-center gallery-border-dashed"
+          style={{ aspectRatio: "4/3" }}
+        >
+          <div className="text-center">
+            <div className="text-muted-foreground/40 text-[20px] mb-1">+</div>
+            <div className="font-mono text-[10px] text-muted-foreground/40">Drop files here</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default AssetGallery;
