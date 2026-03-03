@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import ProjectWorkspace from "./pages/ProjectWorkspace";
 import ProjectJournal from "./pages/ProjectJournal";
 import ProjectWall from "./pages/ProjectWall";
+import ProjectDeck from "./pages/ProjectDeck";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -22,6 +23,7 @@ const App = () => (
           <Route path="/project/:id" element={<ProjectWorkspace />} />
           <Route path="/workspace/journal/:id" element={<ProjectJournal />} />
           <Route path="/workspace/wall/:id" element={<ProjectWall />} />
+          <Route path="/workspace/deck/:id" element={<ProjectDeck />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
