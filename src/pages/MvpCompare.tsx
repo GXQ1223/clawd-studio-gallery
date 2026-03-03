@@ -1,8 +1,7 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 
-/* Inline lightweight versions of each view, using project id "1" */
 import { projects } from "@/data/projects";
 import { riversideAssets, riversideFeed } from "@/data/workspace-data";
 import { journalFeed } from "@/data/journal-data";
@@ -13,11 +12,14 @@ import WorkspaceNav from "@/components/workspace/WorkspaceNav";
 import ProjectBrief from "@/components/workspace/ProjectBrief";
 import AssetGallery from "@/components/workspace/AssetGallery";
 import AgentFeed from "@/components/workspace/AgentFeed";
+import CustomizeModal, { type CustomizeResult } from "@/components/CustomizeModal";
+import WorkspaceTransition from "@/components/WorkspaceTransition";
+import { toast } from "sonner";
 
 const tabs = ["Studio", "Journal", "Wall", "Deck"] as const;
 type Tab = (typeof tabs)[number];
 
-const project = projects[0]; // Riverside Apartment
+const project = projects[0];
 
 /* ── Embedded Studio View ── */
 const StudioView = () => {
@@ -34,7 +36,7 @@ const StudioView = () => {
   );
 };
 
-/* ── Embedded Journal View (simplified) ── */
+/* ── Embedded Journal View ── */
 const JournalView = () => {
   const [input, setInput] = useState("");
   return (
@@ -94,9 +96,9 @@ const JournalView = () => {
   );
 };
 
-/* ── Embedded Wall View (simplified) ── */
+/* ── Embedded Wall View ── */
 const WallView = () => {
-  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [pan] = useState({ x: 0, y: 0 });
   const [zoom] = useState(0.45);
   return (
     <div className="h-full relative overflow-hidden" style={{ background: "#fafafa" }}>
@@ -131,13 +133,12 @@ const WallView = () => {
   );
 };
 
-/* ── Embedded Deck View (simplified) ── */
+/* ── Embedded Deck View ── */
 const DeckView = () => {
   const [currentSlide, setCurrentSlide] = useState(0);
   const slide = deckSlides[currentSlide];
   return (
     <div className="h-full flex bg-background">
-      {/* Slide canvas */}
       <div className="flex-1 flex flex-col items-center justify-center p-8">
         <div className="w-full max-w-[800px]" style={{ aspectRatio: "16/9", background: "#fff", boxShadow: "0 2px 20px rgba(0,0,0,0.06)" }}>
           <div className="w-full h-full flex items-center justify-center p-8">
@@ -155,7 +156,6 @@ const DeckView = () => {
           <button onClick={() => setCurrentSlide(Math.min(deckSlides.length - 1, currentSlide + 1))} className="font-mono text-[12px] text-muted-foreground hover:text-foreground">→</button>
         </div>
       </div>
-      {/* Slide list */}
       <div className="w-[240px] shrink-0 gallery-border border-t-0 border-b-0 border-r-0 overflow-y-auto p-3 space-y-2">
         {deckSlides.map((s, i) => (
           <button key={s.id} onClick={() => setCurrentSlide(i)} className={`w-full text-left p-2 transition-colors ${i === currentSlide ? "bg-secondary" : "hover:bg-secondary/50"}`}>
@@ -169,9 +169,35 @@ const DeckView = () => {
   );
 };
 
+const tabMap: Record<CustomizeResult, Tab> = {
+  studio: "Studio",
+  journal: "Journal",
+  wall: "Wall",
+  deck: "Deck",
+};
+
 const MvpCompare = () => {
   const [activeTab, setActiveTab] = useState<Tab>("Studio");
+  const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const [pendingTab, setPendingTab] = useState<Tab | null>(null);
+  const [isCustomized, setIsCustomized] = useState(false);
   const navigate = useNavigate();
+
+  const handleGenerate = useCallback((result: CustomizeResult) => {
+    setPendingTab(tabMap[result]);
+    setTransitioning(true);
+  }, []);
+
+  const handleTransitionComplete = useCallback(() => {
+    setTransitioning(false);
+    if (pendingTab) {
+      setActiveTab(pendingTab);
+      setPendingTab(null);
+    }
+    setIsCustomized(true);
+    toast("✦ Display customized — you can adjust anytime");
+  }, [pendingTab]);
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -195,6 +221,16 @@ const MvpCompare = () => {
               {tab}
             </button>
           ))}
+
+          <div className="w-px h-4 bg-border mx-2" />
+
+          <button
+            onClick={() => setCustomizeOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 font-mono text-[12px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {isCustomized && <span className="w-[5px] h-[5px] rounded-full bg-foreground" />}
+            Customize ✦
+          </button>
         </nav>
 
         <div className="ml-auto flex items-center gap-2">
@@ -209,6 +245,9 @@ const MvpCompare = () => {
         {activeTab === "Wall" && <WallView />}
         {activeTab === "Deck" && <DeckView />}
       </div>
+
+      <CustomizeModal open={customizeOpen} onOpenChange={setCustomizeOpen} onGenerate={handleGenerate} />
+      <WorkspaceTransition active={transitioning} onComplete={handleTransitionComplete} />
     </div>
   );
 };
