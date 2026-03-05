@@ -30,6 +30,32 @@ export interface AgentMessage {
   created_at: string;
 }
 
+export interface RenderResult {
+  id: string;
+  url: string;
+  label: string;
+  style: string;
+  resolution: string;
+  generated_at: string;
+}
+
+export interface ProductResult {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  price: number;
+  url: string;
+  image: string;
+  match_score: number;
+}
+
+export interface OrchestrationResult {
+  renders: RenderResult[];
+  products: ProductResult[];
+  shoppingList: { total: number; item_count: number; budget_remaining: number | null };
+}
+
 interface SpecialistPlan {
   type: AgentType;
   task: string;
@@ -49,17 +75,97 @@ interface BriefAnalysis {
 /**
  * Designer Agent Orchestration Engine
  * Analyzes user briefs and assembles specialist sub-agent teams.
+ * Calls mock render + sourcing edge functions for end-to-end demo.
  */
 export class DesignerAgent {
+  private onProgress?: (msg: string) => void;
+
   constructor(
     public projectId: string,
-    public userBrief: string
-  ) {}
+    public userBrief: string,
+    opts?: { onProgress?: (msg: string) => void }
+  ) {
+    this.onProgress = opts?.onProgress;
+  }
+
+  private emit(msg: string) {
+    this.onProgress?.(msg);
+  }
+
+  /** Full end-to-end orchestration: analyze → spawn → execute → collect results */
+  async runFullOrchestration(): Promise<OrchestrationResult> {
+    this.emit("Analyzing brief…");
+    const analysis = await this.analyzeBrief();
+    
+    this.emit(`Identified ${analysis.projectType} project — ${analysis.style || "contemporary"} style`);
+    
+    this.emit("Assembling specialist team…");
+    const agents = await this.assembleTeam(analysis);
+    this.emit(`${agents.length} specialists spawned`);
+
+    // Execute render agent
+    this.emit("Generating renders via intdesign.ai…");
+    const renders = await this.executeRenderAgent(analysis);
+    this.emit(`${renders.length} perspectives generated`);
+
+    // Execute sourcing agent
+    this.emit("Sourcing products via SourcerAI…");
+    const sourcingResult = await this.executeSourcingAgent(analysis);
+    this.emit(`${sourcingResult.products.length} products found — $${sourcingResult.shoppingList.total.toLocaleString()} total`);
+
+    // Mark all agents completed
+    for (const agent of agents) {
+      await DesignerAgent.updateSessionStatus(agent.id, "completed");
+    }
+    this.emit("All agents completed ✦");
+
+    return { renders, ...sourcingResult };
+  }
+
+  /** Call mock-render edge function */
+  private async executeRenderAgent(analysis: BriefAnalysis): Promise<RenderResult[]> {
+    try {
+      const { data, error } = await supabase.functions.invoke("mock-render", {
+        body: {
+          style: analysis.style || "contemporary",
+          description: this.userBrief,
+          project_id: this.projectId,
+        },
+      });
+      if (error) throw error;
+      return data.renders || [];
+    } catch (err) {
+      console.error("Render agent failed:", err);
+      this.emit("Render agent encountered an error");
+      return [];
+    }
+  }
+
+  /** Call mock-sourcing edge function */
+  private async executeSourcingAgent(analysis: BriefAnalysis): Promise<{ products: ProductResult[]; shoppingList: { total: number; item_count: number; budget_remaining: number | null } }> {
+    try {
+      const { data, error } = await supabase.functions.invoke("mock-sourcing", {
+        body: {
+          style: analysis.style || "contemporary",
+          budget: analysis.budget,
+          project_id: this.projectId,
+        },
+      });
+      if (error) throw error;
+      return {
+        products: data.products || [],
+        shoppingList: data.shopping_list || { total: 0, item_count: 0, budget_remaining: null },
+      };
+    } catch (err) {
+      console.error("Sourcing agent failed:", err);
+      this.emit("Sourcing agent encountered an error");
+      return { products: [], shoppingList: { total: 0, item_count: 0, budget_remaining: null } };
+    }
+  }
 
   /** Analyze user brief and determine project requirements */
   async analyzeBrief(): Promise<BriefAnalysis> {
     const brief = this.userBrief.toLowerCase();
-
     const analysis: BriefAnalysis = {
       projectType: this.getProjectType(brief),
       style: this.extractStyle(brief),
@@ -68,10 +174,7 @@ export class DesignerAgent {
       providedAssets: this.identifyAssets(brief),
       requiredDeliverables: this.identifyDeliverables(brief),
     };
-
-    // Log analysis message
     await this.postMessage("status_update", `Brief analyzed: ${analysis.projectType} project, ${analysis.style || "no style specified"}, ${analysis.requiredDeliverables.length} deliverables`);
-
     return analysis;
   }
 
@@ -87,7 +190,7 @@ export class DesignerAgent {
           .insert({
             project_id: this.projectId,
             agent_type: spec.type,
-            session_label: `${this.projectId}-${spec.type}`,
+            session_label: `${this.projectId}-${spec.type}-${Date.now()}`,
             task_description: spec.task,
             dependencies: spec.dependencies,
             priority: spec.priority,
@@ -99,24 +202,15 @@ export class DesignerAgent {
         if (error) throw error;
         if (agentSession) {
           spawnedAgents.push(agentSession as unknown as AgentSession);
-
-          await this.postMessage(
-            "coordination",
-            `Spawned ${spec.type} agent: ${spec.task}`,
-            { agent_session_id: agentSession.id }
-          );
-
-          console.log(`🚀 Spawned ${spec.type} agent:`, spec.task);
+          await this.postMessage("coordination", `Spawned ${spec.type} agent: ${spec.task}`, { agent_session_id: agentSession.id });
         }
       } catch (error) {
         console.error(`Failed to spawn ${spec.type} agent:`, error);
       }
     }
-
     return spawnedAgents;
   }
 
-  /** Post a coordination message */
   async postMessage(type: MessageType, content: string, extra: Record<string, unknown> = {}) {
     await supabase.from("agent_messages").insert([{
       project_id: this.projectId,
@@ -127,7 +221,6 @@ export class DesignerAgent {
     }]);
   }
 
-  /** Get all sessions for this project */
   static async getProjectSessions(projectId: string): Promise<AgentSession[]> {
     const { data } = await supabase
       .from("agent_sessions")
@@ -137,7 +230,6 @@ export class DesignerAgent {
     return (data || []) as unknown as AgentSession[];
   }
 
-  /** Get all messages for this project */
   static async getProjectMessages(projectId: string): Promise<AgentMessage[]> {
     const { data } = await supabase
       .from("agent_messages")
@@ -147,7 +239,6 @@ export class DesignerAgent {
     return (data || []) as unknown as AgentMessage[];
   }
 
-  /** Update an agent session status */
   static async updateSessionStatus(sessionId: string, status: AgentStatus, resultData?: Record<string, unknown>) {
     const update: Record<string, unknown> = { status };
     if (status === "completed") update.completed_at = new Date().toISOString();
@@ -156,7 +247,6 @@ export class DesignerAgent {
   }
 
   // --- Private analysis helpers ---
-
   private getProjectType(brief: string): string {
     if (brief.includes("kitchen") || brief.includes("bedroom") || brief.includes("living room")) return "residential";
     if (brief.includes("office") || brief.includes("retail") || brief.includes("restaurant")) return "commercial";

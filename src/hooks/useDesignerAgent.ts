@@ -1,32 +1,63 @@
 import { useState, useCallback } from "react";
-import { DesignerAgent, type AgentSession } from "@/lib/designerAgent";
+import { DesignerAgent, type AgentSession, type OrchestrationResult } from "@/lib/designerAgent";
 import { toast } from "sonner";
+import type { FeedEntry } from "@/data/workspace-data";
 
 /**
  * Hook to orchestrate the Designer Agent for a project.
- * Call `spawnAgent(brief)` to analyze a brief and assemble a specialist team.
+ * Call `runOrchestration(brief)` for full end-to-end: brief → renders → products.
  */
 export function useDesignerAgent(projectId: string) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [results, setResults] = useState<OrchestrationResult | null>(null);
+  const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
 
-  const spawnAgent = useCallback(async (brief: string) => {
+  const addFeedEntry = useCallback((text: string, inProgress = false) => {
+    const now = new Date();
+    const time = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+    const entry: FeedEntry = {
+      id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      time,
+      text,
+      inProgress,
+    };
+    setFeedEntries((prev) => [...prev, entry]);
+    return entry.id;
+  }, []);
+
+  const runOrchestration = useCallback(async (brief: string) => {
     setIsAnalyzing(true);
+    setResults(null);
+    setFeedEntries([]);
+
     try {
-      const agent = new DesignerAgent(projectId, brief);
-      const analysis = await agent.analyzeBrief();
-      const spawned = await agent.assembleTeam(analysis);
-      setSessions(spawned);
-      toast(`✦ ${spawned.length} specialist agents assembled`);
-      return { analysis, spawned };
+      const agent = new DesignerAgent(projectId, brief, {
+        onProgress: (msg) => addFeedEntry(msg, true),
+      });
+
+      const result = await agent.runFullOrchestration();
+      setResults(result);
+
+      // Final feed entries for results
+      for (const render of result.renders) {
+        addFeedEntry(`Generated: ${render.label}`);
+      }
+      for (const product of result.products) {
+        addFeedEntry(`Found ${product.name} at ${product.brand}: $${product.price.toLocaleString()}`);
+      }
+
+      toast(`✦ ${result.renders.length} renders + ${result.products.length} products ready`);
+      return result;
     } catch (err) {
-      console.error("Agent orchestration failed:", err);
+      console.error("Orchestration failed:", err);
+      addFeedEntry("Orchestration failed — check console for details");
       toast.error("Agent orchestration failed");
       return null;
     } finally {
       setIsAnalyzing(false);
     }
-  }, [projectId]);
+  }, [projectId, addFeedEntry]);
 
   const refreshSessions = useCallback(async () => {
     const data = await DesignerAgent.getProjectSessions(projectId);
@@ -34,5 +65,5 @@ export function useDesignerAgent(projectId: string) {
     return data;
   }, [projectId]);
 
-  return { spawnAgent, isAnalyzing, sessions, refreshSessions };
+  return { runOrchestration, isAnalyzing, sessions, results, feedEntries, refreshSessions };
 }
