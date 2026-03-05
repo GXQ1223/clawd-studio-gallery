@@ -8,6 +8,7 @@ import AssetGallery from "@/components/workspace/AssetGallery";
 import AgentFeed from "@/components/workspace/AgentFeed";
 import CustomizeModal, { type CustomizeResult } from "@/components/CustomizeModal";
 import WorkspaceTransition from "@/components/WorkspaceTransition";
+import { useDesignerAgent } from "@/hooks/useDesignerAgent";
 import { toast } from "sonner";
 
 const ProjectWorkspace = () => {
@@ -19,6 +20,7 @@ const ProjectWorkspace = () => {
   const [transitioning, setTransitioning] = useState(false);
   const [pendingResult, setPendingResult] = useState<CustomizeResult | null>(null);
   const [isCustomized, setIsCustomized] = useState(false);
+  const { spawnAgent, isAnalyzing, sessions } = useDesignerAgent(id || "");
 
   const handleGenerate = useCallback((result: CustomizeResult) => {
     setPendingResult(result);
