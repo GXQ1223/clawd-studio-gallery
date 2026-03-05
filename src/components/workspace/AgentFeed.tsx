@@ -1,30 +1,30 @@
 import { useEffect, useRef, useState } from "react";
 import type { FeedEntry } from "@/data/workspace-data";
+import type { OrchestrationResult } from "@/lib/designerAgent";
 import AgentInputBar, { type Attachment } from "./AgentInputBar";
 
 interface Props {
   feed: FeedEntry[];
+  onSubmit?: (text: string, attachments: Attachment[]) => void;
+  isWorking?: boolean;
+  results?: OrchestrationResult | null;
 }
 
-const AgentFeed = ({ feed }: Props) => {
+const AgentFeed = ({ feed, onSubmit, isWorking, results }: Props) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
-  const [entries, setEntries] = useState(feed);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [entries]);
+  }, [feed, results]);
 
-  const handleSubmit = (text: string, _attachments: Attachment[]) => {
-    if (!text.trim() && _attachments.length === 0) return;
-    const now = new Date();
-    const time = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
-    setEntries((prev) => [
-      ...prev,
-      { id: `u-${Date.now()}`, time, text: text || "(image attachment)", inProgress: true },
-    ]);
+  const handleSubmit = (text: string, attachments: Attachment[]) => {
+    if (!text.trim() && attachments.length === 0) return;
+    if (onSubmit) {
+      onSubmit(text, attachments);
+    }
     setInput("");
   };
 
@@ -37,14 +37,8 @@ const AgentFeed = ({ feed }: Props) => {
     >
       {/* Feed */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-0">
-        {entries.map((entry, i) => (
-          <div
-            key={entry.id}
-            className="py-2 flex gap-2 items-start"
-            style={{
-              animation: i >= feed.length ? "fade-in 0.3s ease-out" : undefined,
-            }}
-          >
+        {feed.map((entry, i) => (
+          <div key={entry.id} className="py-2 flex gap-2 items-start">
             <span className="font-mono text-[10px] text-muted-foreground shrink-0 mt-[2px] w-[36px]">
               {entry.time}
             </span>
@@ -60,6 +54,54 @@ const AgentFeed = ({ feed }: Props) => {
             </span>
           </div>
         ))}
+
+        {/* Render results */}
+        {results && results.renders.length > 0 && (
+          <div className="pt-3 pb-1">
+            <p className="font-mono text-[10px] text-muted-foreground mb-2 uppercase tracking-wider">Renders</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {results.renders.map((r) => (
+                <div key={r.id} className="group relative">
+                  <img
+                    src={r.url}
+                    alt={r.label}
+                    className="w-full aspect-[4/3] object-cover rounded"
+                    style={{ border: "1px solid rgba(0,0,0,0.08)" }}
+                  />
+                  <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{r.label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Product results */}
+        {results && results.products.length > 0 && (
+          <div className="pt-3 pb-1">
+            <p className="font-mono text-[10px] text-muted-foreground mb-2 uppercase tracking-wider">Shopping List</p>
+            <div className="space-y-1.5">
+              {results.products.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center gap-2 py-1.5 px-2 rounded hover:bg-secondary/50 transition-colors"
+                  style={{ border: "1px solid rgba(0,0,0,0.05)" }}
+                >
+                  <img src={p.image} alt={p.name} className="w-[36px] h-[36px] rounded object-cover shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium truncate">{p.name}</p>
+                    <p className="text-[10px] text-muted-foreground">{p.brand} · ${p.price.toLocaleString()}</p>
+                  </div>
+                </div>
+              ))}
+              {results.shoppingList && (
+                <div className="pt-1 flex justify-between text-[10px] font-mono text-muted-foreground">
+                  <span>{results.shoppingList.item_count} items</span>
+                  <span className="font-medium text-foreground">${results.shoppingList.total.toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Input area */}
@@ -68,7 +110,7 @@ const AgentFeed = ({ feed }: Props) => {
           input={input}
           onInputChange={setInput}
           onSubmit={handleSubmit}
-          suggestions={suggestions}
+          suggestions={isWorking ? undefined : suggestions}
           compact
         />
       </div>
