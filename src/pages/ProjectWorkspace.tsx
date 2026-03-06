@@ -22,7 +22,7 @@ const ProjectWorkspace = () => {
   const [hasStarted, setHasStarted] = useState(false);
   const [keptAssets, setKeptAssets] = useState<Asset[]>([]);
   const [deletedRenderIds, setDeletedRenderIds] = useState<Set<string>>(new Set());
-  const { runOrchestration, completePlanning, isAnalyzing, results, feedEntries, acknowledgment, planningQuestions } = useDesignerAgent(id || "");
+  const { runOrchestration, completePlanning, isAnalyzing, results, feedEntries, acknowledgment, planningQuestions, sessions, toggleCron, refreshSessions } = useDesignerAgent(id || "");
 
   // Submit from empty brief prompt or chat
   const handleBriefSubmit = useCallback((brief: string) => {
@@ -131,7 +131,7 @@ const ProjectWorkspace = () => {
 
   const allAssets = [...keptAssets, ...dynamicAssets];
   const availableCategories = projectFolders.map((f) => f.name);
-
+  const activeSession = activeFolder ? sessions.find(s => s.agent_type === activeFolder) : undefined;
   // Determine if workspace has any content
   const hasContent = hasStarted || allAssets.length > 0 || projectFolders.length > 0;
 
@@ -199,6 +199,9 @@ const ProjectWorkspace = () => {
             onAssetRefine={handleAssetRefine}
             onFilesUploaded={(urls) => toast(`${urls.length} file(s) ready`)}
             projectId={id}
+            cronEnabled={activeSession?.cron_enabled}
+            cronInterval={activeSession?.cron_interval}
+            onToggleCron={activeSession ? (enabled, interval) => toggleCron(activeSession.id, enabled, interval) : undefined}
           />
         )}
 

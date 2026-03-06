@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from "react";
 import { DesignerAgent, type AgentSession, type OrchestrationResult } from "@/lib/designerAgent";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import type { FeedEntry } from "@/data/workspace-data";
 import { generatePlanningQuestions, composeFinalPrompt } from "@/lib/planningQuestions";
 import type { PlanningQuestion } from "@/components/workspace/PlanningQuestions";
@@ -154,6 +155,24 @@ export function useDesignerAgent(projectId: string) {
     return data;
   }, [projectId]);
 
+  /** Toggle cron auto-generation for a specific agent session */
+  const toggleCron = useCallback(async (sessionId: string, enabled: boolean, interval: string | null) => {
+    const { error } = await supabase
+      .from("agent_sessions")
+      .update({
+        cron_enabled: enabled,
+        cron_interval: interval,
+      } as any)
+      .eq("id", sessionId);
+
+    if (error) {
+      toast.error("Failed to update auto-generate setting");
+      return;
+    }
+    toast(enabled ? `⟳ Auto-generate enabled (${interval})` : "Auto-generate disabled");
+    refreshSessions();
+  }, [refreshSessions]);
+
   return {
     runOrchestration,
     completePlanning,
@@ -164,5 +183,6 @@ export function useDesignerAgent(projectId: string) {
     refreshSessions,
     acknowledgment,
     planningQuestions,
+    toggleCron,
   };
 }

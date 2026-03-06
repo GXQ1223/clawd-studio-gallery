@@ -60,8 +60,11 @@ export type Database = {
           agent_type: string
           completed_at: string | null
           created_at: string | null
+          cron_enabled: boolean
+          cron_interval: string | null
           dependencies: string[] | null
           id: string
+          last_cron_run: string | null
           priority: number | null
           project_id: string
           result_data: Json | null
@@ -75,8 +78,11 @@ export type Database = {
           agent_type: string
           completed_at?: string | null
           created_at?: string | null
+          cron_enabled?: boolean
+          cron_interval?: string | null
           dependencies?: string[] | null
           id?: string
+          last_cron_run?: string | null
           priority?: number | null
           project_id: string
           result_data?: Json | null
@@ -90,8 +96,11 @@ export type Database = {
           agent_type?: string
           completed_at?: string | null
           created_at?: string | null
+          cron_enabled?: boolean
+          cron_interval?: string | null
           dependencies?: string[] | null
           id?: string
+          last_cron_run?: string | null
           priority?: number | null
           project_id?: string
           result_data?: Json | null
