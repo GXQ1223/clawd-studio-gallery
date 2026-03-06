@@ -1,15 +1,29 @@
-import type { Project } from "@/data/projects";
+import type { Project } from "@/hooks/useProjects";
+import AgentTypePicker from "./AgentTypePicker";
 
 interface Props {
-  project: Project;
+  project: {
+    id: string;
+    name: string;
+    room?: string;
+    status: "active" | "draft" | "complete";
+    dimensions: string;
+    budget?: string;
+    image: string;
+    agentTask?: string;
+    folders: { name: string; count: number }[];
+  };
   activeFolder: string | null;
   onFolderClick: (folder: string | null) => void;
+  onAddAgent?: (type: string) => void;
 }
 
-const ProjectBrief = ({ project, activeFolder, onFolderClick }: Props) => {
+const ProjectBrief = ({ project, activeFolder, onFolderClick, onAddAgent }: Props) => {
   const sourced = 12400;
   const total = 28000;
   const pct = Math.round((sourced / total) * 100);
+
+  const folders = project.folders || [];
 
   return (
     <aside className="w-[280px] shrink-0 h-full overflow-y-auto px-5 py-5 flex flex-col gap-5"
@@ -38,7 +52,7 @@ const ProjectBrief = ({ project, activeFolder, onFolderClick }: Props) => {
 
       <div className="h-px bg-border" />
 
-      {/* Folders */}
+      {/* Folders — only show categories that exist */}
       <div className="space-y-0.5">
         <button
           onClick={() => onFolderClick(null)}
@@ -48,7 +62,7 @@ const ProjectBrief = ({ project, activeFolder, onFolderClick }: Props) => {
         >
           <span>all</span>
         </button>
-        {project.folders?.map((f) => (
+        {folders.map((f) => (
           <button
             key={f.name}
             onClick={() => onFolderClick(f.name)}
@@ -71,6 +85,14 @@ const ProjectBrief = ({ project, activeFolder, onFolderClick }: Props) => {
             )}
           </button>
         ))}
+
+        {/* Add agent button */}
+        {onAddAgent && (
+          <AgentTypePicker
+            existingTypes={folders.map((f) => f.name)}
+            onAdd={onAddAgent}
+          />
+        )}
       </div>
 
       <div className="h-px bg-border" />

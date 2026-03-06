@@ -2,15 +2,19 @@ import { useEffect, useRef, useState } from "react";
 import type { FeedEntry } from "@/data/workspace-data";
 import type { OrchestrationResult } from "@/lib/designerAgent";
 import AgentInputBar, { type Attachment } from "./AgentInputBar";
+import type { Asset } from "@/data/workspace-data";
 
 interface Props {
   feed: FeedEntry[];
   onSubmit?: (text: string, attachments: Attachment[]) => void;
   isWorking?: boolean;
   results?: OrchestrationResult | null;
+  onKeepImage?: (render: { id: string; url: string; label: string }) => void;
+  onDeleteImage?: (id: string) => void;
+  onRefineImage?: (render: { id: string; url: string; label: string }) => void;
 }
 
-const AgentFeed = ({ feed, onSubmit, isWorking, results }: Props) => {
+const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteImage, onRefineImage }: Props) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
 
@@ -30,6 +34,8 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results }: Props) => {
 
   const suggestions = ["Japandi palette", "Client hates yellow", "Generate section"];
 
+  const isEmpty = feed.length === 0 && (!results || (results.renders.length === 0 && results.products.length === 0));
+
   return (
     <aside
       className="w-[320px] shrink-0 h-full flex flex-col"
@@ -37,7 +43,17 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results }: Props) => {
     >
       {/* Feed */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-0">
-        {feed.map((entry, i) => (
+        {/* Welcome message when empty */}
+        {isEmpty && (
+          <div className="flex flex-col items-center justify-center h-full text-center px-4 gap-3">
+            <span className="text-[24px] select-none">✦</span>
+            <p className="font-mono text-[12px] text-muted-foreground leading-relaxed">
+              Welcome! Add an agent with <strong>+</strong> in the sidebar, then describe your design direction here.
+            </p>
+          </div>
+        )}
+
+        {feed.map((entry) => (
           <div key={entry.id} className="py-2 flex gap-2 items-start">
             <span className="font-mono text-[10px] text-muted-foreground shrink-0 mt-[2px] w-[36px]">
               {entry.time}
@@ -69,6 +85,33 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results }: Props) => {
                     style={{ border: "1px solid rgba(0,0,0,0.08)" }}
                   />
                   <p className="text-[10px] text-muted-foreground mt-0.5 truncate">{r.label}</p>
+                  {/* Action buttons */}
+                  <div className="absolute inset-0 flex items-end justify-center gap-1 pb-6 opacity-0 group-hover:opacity-100 transition-opacity bg-gradient-to-t from-black/40 to-transparent rounded">
+                    {onKeepImage && (
+                      <button
+                        onClick={() => onKeepImage(r)}
+                        className="px-2 py-1 bg-white/90 text-foreground text-[9px] font-mono hover:bg-white transition-colors"
+                      >
+                        Keep
+                      </button>
+                    )}
+                    {onRefineImage && (
+                      <button
+                        onClick={() => onRefineImage(r)}
+                        className="px-2 py-1 bg-white/90 text-foreground text-[9px] font-mono hover:bg-white transition-colors"
+                      >
+                        Refine
+                      </button>
+                    )}
+                    {onDeleteImage && (
+                      <button
+                        onClick={() => onDeleteImage(r.id)}
+                        className="px-2 py-1 bg-white/90 text-destructive text-[9px] font-mono hover:bg-white transition-colors"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -110,7 +153,7 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results }: Props) => {
           input={input}
           onInputChange={setInput}
           onSubmit={handleSubmit}
-          suggestions={isWorking ? undefined : suggestions}
+          suggestions={isWorking ? undefined : (isEmpty ? ["Add perspective agent", "Generate renders", "Help me design"] : suggestions)}
           compact
         />
       </div>
