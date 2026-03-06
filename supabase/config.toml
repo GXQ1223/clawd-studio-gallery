@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.mock-sourcing]
 verify_jwt = false
+
+[functions.agent-cron]
+verify_jwt = false

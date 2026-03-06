@@ -18,6 +18,9 @@ export interface AgentSession {
   completed_at: string | null;
   result_data: Record<string, unknown> | null;
   created_at: string;
+  cron_enabled: boolean;
+  cron_interval: string | null;
+  last_cron_run: string | null;
 }
 
 export interface AgentMessage {

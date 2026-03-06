@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import type { Asset } from "@/data/workspace-data";
 import PrimaryVersionLayout from "./PrimaryVersionLayout";
 import ModelViewerPlaceholder from "./ModelViewerPlaceholder";
+import AutoGenerateToggle from "./AutoGenerateToggle";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -13,6 +14,9 @@ interface Props {
   onAssetRefine?: (asset: Asset) => void;
   onFilesUploaded?: (urls: string[]) => void;
   projectId?: string;
+  cronEnabled?: boolean;
+  cronInterval?: string | null;
+  onToggleCron?: (enabled: boolean, interval: string | null) => void;
 }
 
 const categoryGradients: Record<string, { bg: string; style: string }> = {
@@ -162,6 +166,9 @@ const AssetGallery = ({
   onAssetRefine,
   onFilesUploaded,
   projectId,
+  cronEnabled,
+  cronInterval,
+  onToggleCron,
 }: Props) => {
   const [localFilter, setLocalFilter] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -227,10 +234,10 @@ const AssetGallery = ({
 
   return (
     <div className="flex-1 min-w-0 h-full overflow-y-auto px-4 py-4">
-      {/* Filter pills — only for existing categories */}
-      {categories.length > 1 && (
-        <div className="flex items-center gap-1.5 mb-4 flex-wrap">
-          {categories.map((cat) => (
+      {/* Auto-generate toggle + Filter pills */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {categories.length > 1 && categories.map((cat) => (
             <button
               key={cat}
               onClick={() => setLocalFilter(cat === "all" ? null : cat)}
@@ -244,7 +251,14 @@ const AssetGallery = ({
             </button>
           ))}
         </div>
-      )}
+        {onToggleCron && (
+          <AutoGenerateToggle
+            enabled={cronEnabled || false}
+            interval={cronInterval || null}
+            onToggle={onToggleCron}
+          />
+        )}
+      </div>
 
       {/* Masonry grid */}
       <div className="columns-3 gap-[2px]" style={{ columnFill: "balance" }}>
