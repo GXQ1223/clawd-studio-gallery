@@ -81,13 +81,16 @@ export class DesignerAgent {
   private onProgress?: (msg: string) => void;
   private userId?: string;
 
+  private conversationHistory: string[];
+
   constructor(
     public projectId: string,
     public userBrief: string,
-    opts?: { onProgress?: (msg: string) => void; userId?: string }
+    opts?: { onProgress?: (msg: string) => void; userId?: string; conversationHistory?: string[] }
   ) {
     this.onProgress = opts?.onProgress;
     this.userId = opts?.userId;
+    this.conversationHistory = opts?.conversationHistory || [];
   }
 
   private emit(msg: string) {

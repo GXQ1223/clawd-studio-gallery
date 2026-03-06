@@ -1,13 +1,13 @@
 import { useState, useRef, useEffect } from "react";
 
-const agentTypes = [
-  { value: "perspective", label: "Perspective", desc: "Multi-image renders" },
-  { value: "sketch", label: "Sketch", desc: "Concept sketches" },
-  { value: "plan", label: "Plan", desc: "Floor plans with versions" },
-  { value: "elevation", label: "Elevation", desc: "Wall elevations" },
-  { value: "section", label: "Section", desc: "Section cuts" },
-  { value: "model photo", label: "Model Photo", desc: "Physical model photos" },
-  { value: "3d model", label: "3D Model", desc: "3D model viewer" },
+const deliverableTypes = [
+  { value: "perspective", label: "Renders", desc: "Photorealistic images of your space" },
+  { value: "sketch", label: "Sketches", desc: "Quick concept visualizations" },
+  { value: "plan", label: "Floor Plan", desc: "Spatial layout with dimensions" },
+  { value: "elevation", label: "Elevations", desc: "Wall views with finishes" },
+  { value: "section", label: "Sections", desc: "Cut-through construction views" },
+  { value: "model photo", label: "Model Photos", desc: "Physical model documentation" },
+  { value: "3d model", label: "3D Model", desc: "Interactive 3D viewer" },
 ] as const;
 
 interface Props {
@@ -27,7 +27,7 @@ const AgentTypePicker = ({ existingTypes, onAdd }: Props) => {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  const available = agentTypes.filter((t) => !existingTypes.includes(t.value));
+  const available = deliverableTypes.filter((t) => !existingTypes.includes(t.value));
 
   if (available.length === 0) return null;
 
@@ -38,12 +38,12 @@ const AgentTypePicker = ({ existingTypes, onAdd }: Props) => {
         className="w-full flex items-center gap-2 py-1.5 px-1 text-[12px] font-mono text-muted-foreground hover:text-foreground transition-colors rounded-sm"
       >
         <span className="inline-flex items-center justify-center w-[14px] h-[14px] rounded-full border border-dashed border-muted-foreground/30 text-[10px] leading-none">+</span>
-        <span>add agent</span>
+        <span>add output</span>
       </button>
 
       {open && (
         <div
-          className="absolute left-0 top-full mt-1 z-50 w-[200px] bg-popover border border-border shadow-lg py-1"
+          className="absolute left-0 top-full mt-1 z-50 w-[220px] bg-popover border border-border shadow-lg py-1"
           style={{ borderRadius: "2px" }}
         >
           {available.map((t) => (
