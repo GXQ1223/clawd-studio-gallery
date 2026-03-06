@@ -3,6 +3,8 @@ import { DesignerAgent, type AgentSession, type OrchestrationResult } from "@/li
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import type { FeedEntry } from "@/data/workspace-data";
+import { generatePlanningQuestions, composeFinalPrompt } from "@/lib/planningQuestions";
+import type { PlanningQuestion } from "@/components/workspace/PlanningQuestions";
 
 interface ConversationEntry {
   role: "user" | "agent";
@@ -16,6 +18,8 @@ export function useDesignerAgent(projectId: string) {
   const [results, setResults] = useState<OrchestrationResult | null>(null);
   const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
   const [acknowledgment, setAcknowledgment] = useState<string | null>(null);
+  const [planningQuestions, setPlanningQuestions] = useState<PlanningQuestion[] | null>(null);
+  const [pendingBrief, setPendingBrief] = useState<string | null>(null);
   const conversationRef = useRef<ConversationEntry[]>([]);
   const { user } = useAuth();
 
@@ -32,17 +36,43 @@ export function useDesignerAgent(projectId: string) {
     return entry.id;
   }, []);
 
-  /** Generate an acknowledgment message based on brief + conversation history */
+  /** Start planning mode — ask questions before generating */
+  const startPlanning = useCallback((brief: string) => {
+    setPendingBrief(brief);
+    conversationRef.current.push({ role: "user", content: brief, timestamp: Date.now() });
+
+    const questions = generatePlanningQuestions(brief);
+    setPlanningQuestions(questions);
+
+    // Show acknowledgment
+    setAcknowledgment("Let me understand your vision before I start designing. A few quick questions:");
+  }, []);
+
+  /** Complete planning and run orchestration with composed prompt */
+  const completePlanning = useCallback(async (answers: Record<string, string>) => {
+    if (!pendingBrief) return;
+
+    const finalPrompt = composeFinalPrompt(pendingBrief, answers);
+    setPlanningQuestions(null);
+    setAcknowledgment(null);
+
+    // Store answers in conversation history
+    const answerSummary = Object.entries(answers).map(([k, v]) => `${k}: ${v}`).join(", ");
+    conversationRef.current.push({ role: "user", content: `Planning answers: ${answerSummary}`, timestamp: Date.now() });
+
+    // Now run the actual orchestration
+    await runOrchestrationDirect(finalPrompt);
+  }, [pendingBrief]);
+
+  /** Generate an acknowledgment for follow-up messages (not first message) */
   const generateAcknowledgment = useCallback((brief: string): string => {
     const history = conversationRef.current;
     const briefLower = brief.toLowerCase();
 
-    // If there's prior context, reference it
     if (history.length > 0) {
-      const lastUserMsg = history.filter(h => h.role === "user").pop();
       if (briefLower.includes("hate") || briefLower.includes("remove") || briefLower.includes("no more")) {
         const target = brief.replace(/^(client |i |we )?(hates?|remove|no more)\s*/i, "").trim();
-        return `Got it — removing ${target || "that element"}. I'll regenerate based on your existing direction. This won't reset your other outputs.`;
+        return `Got it — removing ${target || "that element"}. I'll regenerate based on your existing direction.`;
       }
       if (briefLower.includes("refine") || briefLower.includes("adjust") || briefLower.includes("tweak")) {
         return `Understood — I'll make refinements based on your feedback while keeping the overall direction.`;
@@ -50,25 +80,12 @@ export function useDesignerAgent(projectId: string) {
       return `Got it — updating based on: "${brief}". Building on your previous direction.`;
     }
 
-    // First message
-    if (briefLower.includes("render") || briefLower.includes("perspective")) {
-      return `I'll generate photorealistic renders based on your brief. Starting the design pipeline now.`;
-    }
-    if (briefLower.includes("plan") || briefLower.includes("layout")) {
-      return `I'll create a spatial layout based on your requirements. Analyzing dimensions and flow.`;
-    }
-    return `Starting design pipeline: I'll analyze your brief, generate renders, and source matching products.`;
+    return `Starting design pipeline based on your brief.`;
   }, []);
 
-  const runOrchestration = useCallback(async (brief: string) => {
+  /** Direct orchestration — skips planning (used for follow-ups and after planning completes) */
+  const runOrchestrationDirect = useCallback(async (brief: string) => {
     setIsAnalyzing(true);
-
-    // Generate acknowledgment first
-    const ack = generateAcknowledgment(brief);
-    setAcknowledgment(ack);
-
-    // Store in conversation history
-    conversationRef.current.push({ role: "user", content: brief, timestamp: Date.now() });
 
     try {
       const agent = new DesignerAgent(projectId, brief, {
@@ -79,7 +96,6 @@ export function useDesignerAgent(projectId: string) {
 
       const result = await agent.runFullOrchestration();
       setResults(prev => {
-        // Merge with previous results instead of replacing
         if (!prev) return result;
         return {
           renders: [...prev.renders, ...result.renders],
@@ -95,7 +111,6 @@ export function useDesignerAgent(projectId: string) {
         addFeedEntry(`Found ${product.name} at ${product.brand}: $${product.price.toLocaleString()}`);
       }
 
-      // Store agent response in history
       conversationRef.current.push({
         role: "agent",
         content: `Generated ${result.renders.length} renders and found ${result.products.length} products`,
@@ -114,7 +129,24 @@ export function useDesignerAgent(projectId: string) {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [projectId, addFeedEntry, user?.id, generateAcknowledgment]);
+  }, [projectId, addFeedEntry, user?.id]);
+
+  /** Main entry point — first message triggers planning, follow-ups go direct */
+  const runOrchestration = useCallback(async (brief: string) => {
+    const isFirstMessage = conversationRef.current.length === 0;
+
+    if (isFirstMessage) {
+      // First message → enter planning mode (ask questions)
+      startPlanning(brief);
+      return null;
+    }
+
+    // Follow-up messages → direct orchestration with acknowledgment
+    conversationRef.current.push({ role: "user", content: brief, timestamp: Date.now() });
+    const ack = generateAcknowledgment(brief);
+    setAcknowledgment(ack);
+    return runOrchestrationDirect(brief);
+  }, [startPlanning, generateAcknowledgment, runOrchestrationDirect]);
 
   const refreshSessions = useCallback(async () => {
     const data = await DesignerAgent.getProjectSessions(projectId);
@@ -122,5 +154,15 @@ export function useDesignerAgent(projectId: string) {
     return data;
   }, [projectId]);
 
-  return { runOrchestration, isAnalyzing, sessions, results, feedEntries, refreshSessions, acknowledgment };
+  return {
+    runOrchestration,
+    completePlanning,
+    isAnalyzing,
+    sessions,
+    results,
+    feedEntries,
+    refreshSessions,
+    acknowledgment,
+    planningQuestions,
+  };
 }
