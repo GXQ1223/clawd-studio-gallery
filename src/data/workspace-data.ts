@@ -4,6 +4,7 @@ export interface Asset {
   category: "perspective" | "plan" | "elevation" | "section" | "sketch" | "model photo" | "3d model" | "misc";
   date: string;
   aiGenerated: boolean;
+  imageUrl?: string;
 }
 
 export const riversideAssets: Asset[] = [

@@ -28,11 +28,17 @@ const AssetCell = ({ asset }: { asset: Asset }) => {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      {/* Visual placeholder */}
-      <div className="absolute inset-0" style={{ background: cat.bg }}>
-        {cat.style === "plan" && <PlanLines />}
-        {cat.style === "sketch" && <SketchLines />}
-        {cat.style === "elevation" && <ElevationLines />}
+      {/* Visual content */}
+      <div className="absolute inset-0" style={{ background: asset.imageUrl ? undefined : cat.bg }}>
+        {asset.imageUrl ? (
+          <img src={asset.imageUrl} alt={asset.name} className="w-full h-full object-cover" />
+        ) : (
+          <>
+            {cat.style === "plan" && <PlanLines />}
+            {cat.style === "sketch" && <SketchLines />}
+            {cat.style === "elevation" && <ElevationLines />}
+          </>
+        )}
       </div>
 
       {/* AI badge */}
