@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
-import type { Project } from "@/data/projects";
+import type { Project } from "@/hooks/useProjects";
 
 interface ProjectOverlayProps {
   project: Project | null;
@@ -20,18 +20,18 @@ const ProjectOverlay = ({ project, onClose }: ProjectOverlayProps) => {
 
   if (!project) return null;
 
+  const folders = (project.folders || []) as { name: string; count: number }[];
+
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center"
       style={{ animation: "fade-in 0.3s cubic-bezier(0.32,0.72,0,1)" }}
     >
-      {/* Backdrop */}
       <div
         className="absolute inset-0 bg-foreground/60 backdrop-blur-sm"
         onClick={onClose}
       />
 
-      {/* Card */}
       <div
         className="relative w-[78vw] h-[78vh] bg-background overflow-hidden flex flex-col"
         style={{
@@ -39,7 +39,6 @@ const ProjectOverlay = ({ project, onClose }: ProjectOverlayProps) => {
           animation: "scale-in 0.35s cubic-bezier(0.32,0.72,0,1)",
         }}
       >
-        {/* Close */}
         <button
           onClick={onClose}
           className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center bg-background/90 backdrop-blur-sm rounded-full hover:bg-background transition-colors"
@@ -47,28 +46,31 @@ const ProjectOverlay = ({ project, onClose }: ProjectOverlayProps) => {
           <X size={16} />
         </button>
 
-        {/* Image */}
         <div className="relative flex-1 min-h-0">
-          <img
-            src={project.image}
-            alt={project.name}
-            className="absolute inset-0 w-full h-full object-cover"
-          />
+          {project.image_url ? (
+            <img
+              src={project.image_url}
+              alt={project.name}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-muted flex items-center justify-center">
+              <span className="font-mono text-[48px] text-muted-foreground/20 font-bold">
+                {project.name.charAt(0).toUpperCase()}
+              </span>
+            </div>
+          )}
           <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent" />
         </div>
 
-        {/* Content */}
         <div className="p-6 space-y-4">
-          {/* Folders */}
-          {project.folders && (
+          {folders.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap">
-              {project.folders.map((f) => (
+              {folders.map((f) => (
                 <span
                   key={f.name}
                   className={`px-2 py-0.5 text-[11px] font-mono gallery-border ${
-                    f.count > 0
-                      ? "text-foreground"
-                      : "text-muted-foreground/40"
+                    f.count > 0 ? "text-foreground" : "text-muted-foreground/40"
                   }`}
                 >
                   {f.name}{f.count > 0 ? `·${f.count}` : ""}
@@ -77,7 +79,6 @@ const ProjectOverlay = ({ project, onClose }: ProjectOverlayProps) => {
             </div>
           )}
 
-          {/* Title */}
           <h2 className="text-[22px] font-medium tracking-tight">
             {project.name}
             {project.room && (
@@ -85,7 +86,6 @@ const ProjectOverlay = ({ project, onClose }: ProjectOverlayProps) => {
             )}
           </h2>
 
-          {/* Pills */}
           <div className="flex items-center gap-2">
             <span className="flex items-center gap-1.5 px-2 py-0.5 gallery-border font-mono text-[11px]">
               <span className={`status-dot status-dot-${project.status}`} />
@@ -101,7 +101,6 @@ const ProjectOverlay = ({ project, onClose }: ProjectOverlayProps) => {
             )}
           </div>
 
-          {/* Actions */}
           <div className="flex items-center gap-2 pt-1">
             <button
               onClick={() => { onClose(); navigate(`/project/${project.id}`); }}

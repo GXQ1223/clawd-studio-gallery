@@ -1,4 +1,4 @@
-import type { Project } from "@/data/projects";
+import type { Project } from "@/hooks/useProjects";
 import { Plus } from "lucide-react";
 
 interface ProjectCardProps {
@@ -19,6 +19,8 @@ const ProjectCard = ({ project, isHero, cols, onClick }: ProjectCardProps) => {
   const hideMetaAlways = cols >= 6;
   const aspectClass = cols <= 2 ? "aspect-[16/9]" : cols >= 6 ? "aspect-square" : "aspect-[4/3]";
 
+  const placeholderBg = `hsl(${(project.name.charCodeAt(0) * 7) % 360}, 15%, 85%)`;
+
   return (
     <div
       onClick={onClick}
@@ -27,24 +29,33 @@ const ProjectCard = ({ project, isHero, cols, onClick }: ProjectCardProps) => {
       }`}
     >
       <div className={`relative w-full ${aspectClass} overflow-hidden`}>
-        <img
-          src={project.image}
-          alt={project.name}
-          className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
-          loading="lazy"
-        />
-
-        {/* Agent badge */}
-        {project.agentTask && (
-          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 bg-background/95 backdrop-blur-sm px-2 py-1">
-            <span className="status-dot status-dot-agent animate-pulse-dot" />
-            <span className="font-mono text-[10px] text-muted-foreground">
-              {project.agentTask}
+        {project.image_url ? (
+          <img
+            src={project.image_url}
+            alt={project.name}
+            className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.03]"
+            loading="lazy"
+          />
+        ) : (
+          <div
+            className="absolute inset-0 flex items-center justify-center"
+            style={{ background: placeholderBg }}
+          >
+            <span className="font-mono text-[24px] text-foreground/20 font-bold">
+              {project.name.charAt(0).toUpperCase()}
             </span>
           </div>
         )}
 
-        {/* Hover overlay */}
+        {project.agent_task && (
+          <div className="absolute top-2.5 right-2.5 flex items-center gap-1.5 bg-background/95 backdrop-blur-sm px-2 py-1">
+            <span className="status-dot status-dot-agent animate-pulse-dot" />
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {project.agent_task}
+            </span>
+          </div>
+        )}
+
         {!hideMetaAlways && (
           <div
             className={`absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent transition-opacity duration-300 ${
@@ -67,7 +78,7 @@ const ProjectCard = ({ project, isHero, cols, onClick }: ProjectCardProps) => {
               <div className="flex items-center gap-2 flex-wrap">
                 <span className={`status-dot status-dot-${project.status}`} />
                 <span className="font-mono text-[10px] text-background/70">
-                  {statusLabel[project.status]}
+                  {statusLabel[project.status] || project.status}
                 </span>
                 <span className="font-mono text-[10px] text-background/50">
                   {project.dimensions}
@@ -86,11 +97,14 @@ const ProjectCard = ({ project, isHero, cols, onClick }: ProjectCardProps) => {
   );
 };
 
-export const NewProjectCard = ({ cols }: { cols: number }) => {
+export const NewProjectCard = ({ cols, onClick }: { cols: number; onClick?: () => void }) => {
   const aspectClass = cols <= 2 ? "aspect-[16/9]" : cols >= 6 ? "aspect-square" : "aspect-[4/3]";
 
   return (
-    <div className={`relative w-full ${aspectClass} gallery-border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-foreground/20 transition-colors`}>
+    <div
+      onClick={onClick}
+      className={`relative w-full ${aspectClass} gallery-border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-foreground/20 transition-colors`}
+    >
       <Plus size={20} className="text-muted-foreground" />
       <span className="font-mono text-[11px] text-muted-foreground">New Project</span>
     </div>

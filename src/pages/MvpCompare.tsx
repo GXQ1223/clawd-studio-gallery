@@ -2,7 +2,7 @@ import { useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 
-import { projects } from "@/data/projects";
+import { projects } from "@/data/projects"; // MvpCompare uses static demo data
 import { riversideAssets, riversideFeed } from "@/data/workspace-data";
 import { journalFeed } from "@/data/journal-data";
 import { wallAssets, wallZones } from "@/data/wall-data";

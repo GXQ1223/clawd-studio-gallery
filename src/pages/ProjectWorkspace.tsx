@@ -1,6 +1,6 @@
 import { useState, useCallback } from "react";
 import { useParams, Navigate, useNavigate } from "react-router-dom";
-import { projects } from "@/data/projects";
+import { useProject } from "@/hooks/useProjects";
 import { riversideAssets, riversideFeed } from "@/data/workspace-data";
 import ProjectBrief from "@/components/workspace/ProjectBrief";
 import AssetGallery from "@/components/workspace/AssetGallery";
@@ -14,7 +14,7 @@ import type { Attachment } from "@/components/workspace/AgentInputBar";
 const ProjectWorkspace = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const project = projects.find((p) => p.id === id);
+  const { data: project, isLoading } = useProject(id);
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
@@ -42,21 +42,39 @@ const ProjectWorkspace = () => {
   const handleAgentSubmit = useCallback(
     (text: string, _attachments: Attachment[]) => {
       if (!text.trim() && _attachments.length === 0) return;
-      // Use the text as a brief and run full orchestration
       const brief = text || "Modern living room design with renders and furniture sourcing";
       runOrchestration(brief);
     },
     [runOrchestration]
   );
 
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <span className="font-mono text-[12px] text-muted-foreground animate-pulse">loading…</span>
+      </div>
+    );
+  }
+
   if (!project) return <Navigate to="/" replace />;
 
-  // Merge static feed with live agent feed entries
+  // Adapt project to the shape ProjectBrief expects
+  const briefProject = {
+    id: project.id,
+    name: project.name,
+    room: project.room || undefined,
+    status: project.status as "active" | "draft" | "complete",
+    dimensions: project.dimensions,
+    budget: project.budget || undefined,
+    image: project.image_url || "",
+    agentTask: project.agent_task || undefined,
+    folders: (project.folders || []) as { name: string; count: number }[],
+  };
+
   const combinedFeed = [...riversideFeed.filter((f) => !f.inProgress), ...feedEntries];
 
-  // Build dynamic assets from results
   const dynamicAssets = results
-    ? results.renders.map((r, i) => ({
+    ? results.renders.map((r) => ({
         id: r.id,
         name: r.label,
         category: "perspective" as const,
@@ -100,7 +118,7 @@ const ProjectWorkspace = () => {
       </div>
 
       <div className="flex flex-1 min-h-0">
-        <ProjectBrief project={project} activeFolder={activeFolder} onFolderClick={setActiveFolder} />
+        <ProjectBrief project={briefProject} activeFolder={activeFolder} onFolderClick={setActiveFolder} />
         <AssetGallery assets={allAssets} activeFolder={activeFolder} />
         <AgentFeed feed={combinedFeed} onSubmit={handleAgentSubmit} isWorking={isAnalyzing} results={results} />
       </div>

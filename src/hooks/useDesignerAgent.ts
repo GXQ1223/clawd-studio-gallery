@@ -1,17 +1,15 @@
 import { useState, useCallback } from "react";
 import { DesignerAgent, type AgentSession, type OrchestrationResult } from "@/lib/designerAgent";
+import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 import type { FeedEntry } from "@/data/workspace-data";
 
-/**
- * Hook to orchestrate the Designer Agent for a project.
- * Call `runOrchestration(brief)` for full end-to-end: brief → renders → products.
- */
 export function useDesignerAgent(projectId: string) {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [results, setResults] = useState<OrchestrationResult | null>(null);
   const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
+  const { user } = useAuth();
 
   const addFeedEntry = useCallback((text: string, inProgress = false) => {
     const now = new Date();
@@ -34,12 +32,12 @@ export function useDesignerAgent(projectId: string) {
     try {
       const agent = new DesignerAgent(projectId, brief, {
         onProgress: (msg) => addFeedEntry(msg, true),
+        userId: user?.id,
       });
 
       const result = await agent.runFullOrchestration();
       setResults(result);
 
-      // Final feed entries for results
       for (const render of result.renders) {
         addFeedEntry(`Generated: ${render.label}`);
       }
@@ -57,7 +55,7 @@ export function useDesignerAgent(projectId: string) {
     } finally {
       setIsAnalyzing(false);
     }
-  }, [projectId, addFeedEntry]);
+  }, [projectId, addFeedEntry, user?.id]);
 
   const refreshSessions = useCallback(async () => {
     const data = await DesignerAgent.getProjectSessions(projectId);
