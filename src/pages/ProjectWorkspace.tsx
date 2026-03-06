@@ -1,10 +1,12 @@
 import { useState, useCallback } from "react";
 import { useParams, Navigate, useNavigate } from "react-router-dom";
-import { useProject } from "@/hooks/useProjects";
+import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import { riversideAssets, riversideFeed } from "@/data/workspace-data";
+import type { Asset } from "@/data/workspace-data";
 import ProjectBrief from "@/components/workspace/ProjectBrief";
 import AssetGallery from "@/components/workspace/AssetGallery";
 import AgentFeed from "@/components/workspace/AgentFeed";
+import OnboardingOverlay from "@/components/workspace/OnboardingOverlay";
 import CustomizeModal, { type CustomizeResult } from "@/components/CustomizeModal";
 import WorkspaceTransition from "@/components/WorkspaceTransition";
 import { useDesignerAgent } from "@/hooks/useDesignerAgent";
@@ -15,11 +17,14 @@ const ProjectWorkspace = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { data: project, isLoading } = useProject(id);
+  const updateProject = useUpdateProject();
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [customizeOpen, setCustomizeOpen] = useState(false);
   const [transitioning, setTransitioning] = useState(false);
   const [pendingResult, setPendingResult] = useState<CustomizeResult | null>(null);
   const [isCustomized, setIsCustomized] = useState(false);
+  const [keptAssets, setKeptAssets] = useState<Asset[]>([]);
+  const [deletedRenderIds, setDeletedRenderIds] = useState<Set<string>>(new Set());
   const { runOrchestration, isAnalyzing, results, feedEntries } = useDesignerAgent(id || "");
 
   const handleGenerate = useCallback((result: CustomizeResult) => {
@@ -48,6 +53,52 @@ const ProjectWorkspace = () => {
     [runOrchestration]
   );
 
+  // Add agent type to project folders
+  const handleAddAgent = useCallback((type: string) => {
+    if (!project || !id) return;
+    const currentFolders = (project.folders || []) as { name: string; count: number }[];
+    if (currentFolders.some((f) => f.name === type)) return;
+    const newFolders = [...currentFolders, { name: type, count: 0 }];
+    updateProject.mutate({ id, folders: newFolders as any });
+    toast(`✦ ${type} agent added`);
+  }, [project, id, updateProject]);
+
+  // Image actions from feed
+  const handleKeepImage = useCallback((render: { id: string; url: string; label: string }) => {
+    const newAsset: Asset = {
+      id: render.id,
+      name: render.label,
+      category: "perspective",
+      date: new Date().toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+      aiGenerated: true,
+      imageUrl: render.url,
+    };
+    setKeptAssets((prev) => [...prev, newAsset]);
+    toast("✦ Image added to gallery");
+  }, []);
+
+  const handleDeleteImage = useCallback((renderId: string) => {
+    setDeletedRenderIds((prev) => new Set(prev).add(renderId));
+    setKeptAssets((prev) => prev.filter((a) => a.id !== renderId));
+    toast("Image removed");
+  }, []);
+
+  const handleRefineImage = useCallback((render: { id: string; url: string; label: string }) => {
+    // Pre-fill a refinement prompt
+    const brief = `Refine this render: "${render.label}" — make adjustments based on client feedback`;
+    runOrchestration(brief);
+  }, [runOrchestration]);
+
+  const handleAssetDelete = useCallback((assetId: string) => {
+    setKeptAssets((prev) => prev.filter((a) => a.id !== assetId));
+    toast("Asset removed");
+  }, []);
+
+  const handleAssetRefine = useCallback((asset: Asset) => {
+    const brief = `Refine this ${asset.category}: "${asset.name}"`;
+    runOrchestration(brief);
+  }, [runOrchestration]);
+
   if (isLoading) {
     return (
       <div className="h-screen flex items-center justify-center bg-background">
@@ -58,7 +109,8 @@ const ProjectWorkspace = () => {
 
   if (!project) return <Navigate to="/" replace />;
 
-  // Adapt project to the shape ProjectBrief expects
+  const projectFolders = (project.folders || []) as { name: string; count: number }[];
+
   const briefProject = {
     id: project.id,
     name: project.name,
@@ -68,13 +120,21 @@ const ProjectWorkspace = () => {
     budget: project.budget || undefined,
     image: project.image_url || "",
     agentTask: project.agent_task || undefined,
-    folders: (project.folders || []) as { name: string; count: number }[],
+    folders: projectFolders,
   };
 
   const combinedFeed = [...riversideFeed.filter((f) => !f.inProgress), ...feedEntries];
 
-  const dynamicAssets = results
-    ? results.renders.map((r) => ({
+  // Filter out deleted renders
+  const filteredResults = results
+    ? {
+        ...results,
+        renders: results.renders.filter((r) => !deletedRenderIds.has(r.id)),
+      }
+    : null;
+
+  const dynamicAssets = filteredResults
+    ? filteredResults.renders.map((r) => ({
         id: r.id,
         name: r.label,
         category: "perspective" as const,
@@ -84,7 +144,8 @@ const ProjectWorkspace = () => {
       }))
     : [];
 
-  const allAssets = [...dynamicAssets, ...riversideAssets];
+  const allAssets = [...keptAssets, ...dynamicAssets, ...riversideAssets];
+  const availableCategories = projectFolders.map((f) => f.name);
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -118,11 +179,33 @@ const ProjectWorkspace = () => {
       </div>
 
       <div className="flex flex-1 min-h-0">
-        <ProjectBrief project={briefProject} activeFolder={activeFolder} onFolderClick={setActiveFolder} />
-        <AssetGallery assets={allAssets} activeFolder={activeFolder} />
-        <AgentFeed feed={combinedFeed} onSubmit={handleAgentSubmit} isWorking={isAnalyzing} results={results} />
+        <ProjectBrief
+          project={briefProject}
+          activeFolder={activeFolder}
+          onFolderClick={setActiveFolder}
+          onAddAgent={handleAddAgent}
+        />
+        <AssetGallery
+          assets={allAssets}
+          activeFolder={activeFolder}
+          availableCategories={availableCategories}
+          onAssetDelete={handleAssetDelete}
+          onAssetRefine={handleAssetRefine}
+          onFilesUploaded={(urls) => toast(`${urls.length} file(s) ready for agent`)}
+          projectId={id}
+        />
+        <AgentFeed
+          feed={combinedFeed}
+          onSubmit={handleAgentSubmit}
+          isWorking={isAnalyzing}
+          results={filteredResults}
+          onKeepImage={handleKeepImage}
+          onDeleteImage={handleDeleteImage}
+          onRefineImage={handleRefineImage}
+        />
       </div>
 
+      {id && <OnboardingOverlay projectId={id} />}
       <CustomizeModal open={customizeOpen} onOpenChange={setCustomizeOpen} onGenerate={handleGenerate} />
       <WorkspaceTransition active={transitioning} onComplete={handleTransitionComplete} />
     </div>

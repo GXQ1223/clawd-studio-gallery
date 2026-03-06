@@ -20,7 +20,7 @@ import { toast } from "sonner";
 const tabs = ["Studio", "Journal", "Wall", "Deck"] as const;
 type Tab = (typeof tabs)[number];
 
-const project = projects[0];
+const project = { ...projects[0], folders: projects[0].folders || [] };
 
 /* ── Embedded Studio View ── */
 const StudioView = () => {
