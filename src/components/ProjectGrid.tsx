@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { projects, type Project, type ProjectStatus } from "@/data/projects";
+import { useProjects, type Project } from "@/hooks/useProjects";
 import ProjectCard, { NewProjectCard } from "./ProjectCard";
 import ProjectOverlay from "./ProjectOverlay";
+import NewProjectModal from "./NewProjectModal";
 
 interface ProjectGridProps {
   filter: "all" | "active" | "draft" | "complete";
@@ -12,11 +13,10 @@ const ProjectGrid = ({ filter, viewMode }: ProjectGridProps) => {
   const [cols, setCols] = useState(4);
   const [indicator, setIndicator] = useState<string | null>(null);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
   const indicatorTimeout = useRef<ReturnType<typeof setTimeout>>();
 
-  const filtered = filter === "all"
-    ? projects
-    : projects.filter((p) => p.status === filter);
+  const { data: projects = [], isLoading } = useProjects(filter);
 
   const showIndicator = useCallback((newCols: number) => {
     setIndicator(`⊞ ${newCols} columns`);
@@ -24,15 +24,12 @@ const ProjectGrid = ({ filter, viewMode }: ProjectGridProps) => {
     indicatorTimeout.current = setTimeout(() => setIndicator(null), 900);
   }, []);
 
-  // Ctrl+wheel zoom
   useEffect(() => {
     const handler = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       setCols((prev) => {
-        const next = e.deltaY > 0
-          ? Math.min(prev + 1, 8)
-          : Math.max(prev - 1, 1);
+        const next = e.deltaY > 0 ? Math.min(prev + 1, 8) : Math.max(prev - 1, 1);
         if (next !== prev) showIndicator(next);
         return next;
       });
@@ -41,7 +38,6 @@ const ProjectGrid = ({ filter, viewMode }: ProjectGridProps) => {
     return () => window.removeEventListener("wheel", handler);
   }, [showIndicator]);
 
-  // Touch pinch
   useEffect(() => {
     let lastDist = 0;
     const onTouchMove = (e: TouchEvent) => {
@@ -72,6 +68,14 @@ const ProjectGrid = ({ filter, viewMode }: ProjectGridProps) => {
     };
   }, [showIndicator]);
 
+  if (isLoading) {
+    return (
+      <div className="pt-[96px] pb-[44px] px-0 flex items-center justify-center min-h-[300px]">
+        <span className="font-mono text-[12px] text-muted-foreground animate-pulse">loading projects…</span>
+      </div>
+    );
+  }
+
   return (
     <>
       <div
@@ -82,7 +86,7 @@ const ProjectGrid = ({ filter, viewMode }: ProjectGridProps) => {
           gap: "var(--gallery-gap, 2px)",
         }}
       >
-        {filtered.map((project, i) => (
+        {projects.map((project, i) => (
           <ProjectCard
             key={project.id}
             project={project}
@@ -91,10 +95,9 @@ const ProjectGrid = ({ filter, viewMode }: ProjectGridProps) => {
             onClick={() => setSelectedProject(project)}
           />
         ))}
-        <NewProjectCard cols={cols} />
+        <NewProjectCard cols={cols} onClick={() => setNewProjectOpen(true)} />
       </div>
 
-      {/* Column indicator */}
       {indicator && (
         <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[60] px-4 py-2 bg-foreground/90 text-background font-mono text-[13px] rounded-full animate-fade-indicator pointer-events-none">
           {indicator}
@@ -105,6 +108,7 @@ const ProjectGrid = ({ filter, viewMode }: ProjectGridProps) => {
         project={selectedProject}
         onClose={() => setSelectedProject(null)}
       />
+      <NewProjectModal open={newProjectOpen} onOpenChange={setNewProjectOpen} />
     </>
   );
 };

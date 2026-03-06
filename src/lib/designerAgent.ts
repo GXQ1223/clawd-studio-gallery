@@ -79,13 +79,15 @@ interface BriefAnalysis {
  */
 export class DesignerAgent {
   private onProgress?: (msg: string) => void;
+  private userId?: string;
 
   constructor(
     public projectId: string,
     public userBrief: string,
-    opts?: { onProgress?: (msg: string) => void }
+    opts?: { onProgress?: (msg: string) => void; userId?: string }
   ) {
     this.onProgress = opts?.onProgress;
+    this.userId = opts?.userId;
   }
 
   private emit(msg: string) {
@@ -195,6 +197,7 @@ export class DesignerAgent {
             dependencies: spec.dependencies,
             priority: spec.priority,
             status: "spawned" as AgentStatus,
+            user_id: this.userId,
           })
           .select()
           .single();
@@ -218,6 +221,7 @@ export class DesignerAgent {
       content,
       metadata: extra as Record<string, string>,
       agent_session_id: (extra.agent_session_id as string) || null,
+      user_id: this.userId,
     }]);
   }
 

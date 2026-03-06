@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useParams, Navigate, useNavigate } from "react-router-dom";
-import { projects } from "@/data/projects";
+import { useProject } from "@/hooks/useProjects";
 import { wallAssets, wallZones, type WallAsset } from "@/data/wall-data";
 import { riversideFeed } from "@/data/workspace-data";
 import { ArrowLeft } from "lucide-react";
@@ -218,7 +218,7 @@ const AgentPanel = () => {
 const ProjectWall = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const project = projects.find((p) => p.id === id);
+  const { data: project, isLoading } = useProject(id);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -257,6 +257,7 @@ const ProjectWall = () => {
     return () => el.removeEventListener("wheel", prevent);
   }, []);
 
+  if (isLoading) return <div className="h-screen flex items-center justify-center bg-background"><span className="font-mono text-[12px] text-muted-foreground animate-pulse">loading…</span></div>;
   if (!project) return <Navigate to="/" replace />;
 
   const viewW = typeof window !== "undefined" ? window.innerWidth : 1200;

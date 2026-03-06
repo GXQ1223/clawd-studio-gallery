@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, Navigate, useNavigate } from "react-router-dom";
-import { projects } from "@/data/projects";
+import { useProject } from "@/hooks/useProjects";
 import { journalFeed, type JournalEntry } from "@/data/journal-data";
 import { ArrowLeft } from "lucide-react";
 import AgentInputBar, { type Attachment } from "@/components/workspace/AgentInputBar";
@@ -139,7 +139,7 @@ const AgentCard = ({ entry }: { entry: JournalEntry }) => (
 const ProjectJournal = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const project = projects.find((p) => p.id === id);
+  const { data: project, isLoading } = useProject(id);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
   const [entries, setEntries] = useState(journalFeed);
@@ -150,6 +150,7 @@ const ProjectJournal = () => {
     }
   }, []);
 
+  if (isLoading) return <div className="h-screen flex items-center justify-center bg-background"><span className="font-mono text-[12px] text-muted-foreground animate-pulse">loading…</span></div>;
   if (!project) return <Navigate to="/" replace />;
 
   const handleSubmit = (text: string, _attachments: Attachment[]) => {
