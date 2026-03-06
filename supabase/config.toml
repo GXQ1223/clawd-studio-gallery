@@ -3,6 +3,9 @@ project_id = "cahvyvmwqtbvyauorokn"
 [functions.mock-render]
 verify_jwt = true
 
+[functions.generate-render]
+verify_jwt = false
+
 [functions.mock-sourcing]
 verify_jwt = true
 
