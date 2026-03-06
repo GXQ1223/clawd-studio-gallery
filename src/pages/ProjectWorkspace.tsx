@@ -22,7 +22,7 @@ const ProjectWorkspace = () => {
   const [hasStarted, setHasStarted] = useState(false);
   const [keptAssets, setKeptAssets] = useState<Asset[]>([]);
   const [deletedRenderIds, setDeletedRenderIds] = useState<Set<string>>(new Set());
-  const { runOrchestration, isAnalyzing, results, feedEntries, acknowledgment } = useDesignerAgent(id || "");
+  const { runOrchestration, completePlanning, isAnalyzing, results, feedEntries, acknowledgment, planningQuestions } = useDesignerAgent(id || "");
 
   // Submit from empty brief prompt or chat
   const handleBriefSubmit = useCallback((brief: string) => {
@@ -39,6 +39,10 @@ const ProjectWorkspace = () => {
     },
     [runOrchestration]
   );
+
+  const handleCompletePlanning = useCallback((answers: Record<string, string>) => {
+    completePlanning(answers);
+  }, [completePlanning]);
 
   // Add deliverable type
   const handleAddAgent = useCallback((type: string) => {
@@ -209,6 +213,8 @@ const ProjectWorkspace = () => {
             onDeleteImage={handleDeleteImage}
             onRefineImage={handleRefineImage}
             acknowledgment={acknowledgment}
+            planningQuestions={planningQuestions}
+            onCompletePlanning={handleCompletePlanning}
             onClose={() => setChatOpen(false)}
           />
         )}

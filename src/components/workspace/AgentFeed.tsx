@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { FeedEntry } from "@/data/workspace-data";
 import type { OrchestrationResult } from "@/lib/designerAgent";
 import AgentInputBar, { type Attachment } from "./AgentInputBar";
+import PlanningQuestions, { type PlanningQuestion } from "./PlanningQuestions";
 
 interface Props {
   feed: FeedEntry[];
@@ -12,11 +13,13 @@ interface Props {
   onDeleteImage?: (id: string) => void;
   onRefineImage?: (render: { id: string; url: string; label: string }) => void;
   acknowledgment?: string | null;
+  planningQuestions?: PlanningQuestion[] | null;
+  onCompletePlanning?: (answers: Record<string, string>) => void;
   isDrawer?: boolean;
   onClose?: () => void;
 }
 
-const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteImage, onRefineImage, acknowledgment, isDrawer, onClose }: Props) => {
+const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteImage, onRefineImage, acknowledgment, planningQuestions, onCompletePlanning, isDrawer, onClose }: Props) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
 
@@ -24,7 +27,7 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteIm
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [feed, results, acknowledgment]);
+  }, [feed, results, acknowledgment, planningQuestions]);
 
   const handleSubmit = (text: string, attachments: Attachment[]) => {
     if (!text.trim() && attachments.length === 0) return;
@@ -34,7 +37,7 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteIm
 
   const suggestions = ["Remove yellow tones", "Generate floor plan", "Source furniture"];
 
-  const isEmpty = feed.length === 0 && (!results || (results.renders.length === 0 && results.products.length === 0));
+  const isEmpty = feed.length === 0 && (!results || (results.renders.length === 0 && results.products.length === 0)) && !planningQuestions;
 
   return (
     <aside
@@ -69,7 +72,7 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteIm
         )}
 
         {/* Acknowledgment card */}
-        {acknowledgment && (
+        {acknowledgment && !planningQuestions && (
           <div className="mb-3 p-3 bg-secondary/50 gallery-border">
             <p className="text-[12px] leading-relaxed">{acknowledgment}</p>
             {isWorking && (
@@ -78,6 +81,20 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteIm
                 <span className="font-mono text-[10px] text-muted-foreground">Working on it…</span>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Planning questions — interactive discovery */}
+        {planningQuestions && acknowledgment && (
+          <div className="mb-3 space-y-3">
+            <div className="p-3 bg-secondary/50 gallery-border">
+              <p className="text-[12px] leading-relaxed">{acknowledgment}</p>
+            </div>
+            <PlanningQuestions
+              questions={planningQuestions}
+              onComplete={(answers) => onCompletePlanning?.(answers)}
+              isGenerating={isWorking}
+            />
           </div>
         )}
 
@@ -155,16 +172,18 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteIm
         )}
       </div>
 
-      {/* Input */}
-      <div className="px-4 pb-4 pt-2" style={{ borderTop: "1px solid hsl(var(--border))" }}>
-        <AgentInputBar
-          input={input}
-          onInputChange={setInput}
-          onSubmit={handleSubmit}
-          suggestions={isWorking ? undefined : (isEmpty ? ["Generate renders", "Create floor plan", "Source furniture"] : suggestions)}
-          compact
-        />
-      </div>
+      {/* Input — hide during planning mode */}
+      {!planningQuestions && (
+        <div className="px-4 pb-4 pt-2" style={{ borderTop: "1px solid hsl(var(--border))" }}>
+          <AgentInputBar
+            input={input}
+            onInputChange={setInput}
+            onSubmit={handleSubmit}
+            suggestions={isWorking ? undefined : (isEmpty ? ["Generate renders", "Create floor plan", "Source furniture"] : suggestions)}
+            compact
+          />
+        </div>
+      )}
     </aside>
   );
 };
