@@ -8,7 +8,7 @@ const corsHeaders = {
 };
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-const GEMINI_MODEL = "gemini-2.0-flash-exp";
+const GEMINI_MODEL = "gemini-2.5-flash-image";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -54,9 +54,12 @@ function buildDesignPrompt(
  * Call Gemini API to generate a single image.
  */
 async function generateImage(prompt: string): Promise<Uint8Array | null> {
-  const response = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
+  const response = await fetch(GEMINI_ENDPOINT, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "x-goog-api-key": GEMINI_API_KEY!,
+    },
     body: JSON.stringify({
       contents: [
         {
@@ -65,7 +68,9 @@ async function generateImage(prompt: string): Promise<Uint8Array | null> {
       ],
       generationConfig: {
         responseModalities: ["IMAGE"],
-        temperature: 1.0,
+        imageConfig: {
+          aspectRatio: "16:9",
+        },
       },
     }),
   });
@@ -188,7 +193,7 @@ serve(async (req) => {
           url,
           label: `${styleLabel.charAt(0).toUpperCase() + styleLabel.slice(1)} ${variationLabels[i]}`,
           style: styleLabel,
-          resolution: "1024x1024",
+          resolution: "1408x768",
           generated_at: new Date().toISOString(),
         });
       } catch (err) {
@@ -205,7 +210,7 @@ serve(async (req) => {
         project_id,
         renders,
         processing_time_ms: processingTime,
-        engine: "gemini-2.0-flash (live)",
+        engine: "gemini-2.5-flash-image (live)",
       }),
       {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
