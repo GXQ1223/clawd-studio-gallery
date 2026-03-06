@@ -42,11 +42,11 @@ function getEndpointForAgent(agentType: string): string {
     case "elevation":
     case "section":
     case "plan":
-      return "mock-render";
+      return "generate-render";
     case "sourcing":
       return "mock-sourcing";
     default:
-      return "mock-render";
+      return "generate-render";
   }
 }
 

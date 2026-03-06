@@ -112,7 +112,7 @@ export class DesignerAgent {
     this.emit(`${agents.length} specialists spawned`);
 
     // Execute render agent
-    this.emit("Generating renders via intdesign.ai…");
+    this.emit("Generating renders via Gemini AI…");
     const renders = await this.executeRenderAgent(analysis);
     this.emit(`${renders.length} perspectives generated`);
 
@@ -130,22 +130,35 @@ export class DesignerAgent {
     return { renders, ...sourcingResult };
   }
 
-  /** Call mock-render edge function */
+  /** Call generate-render edge function (Gemini AI), with mock-render fallback */
   private async executeRenderAgent(analysis: BriefAnalysis): Promise<RenderResult[]> {
+    const body = {
+      style: analysis.style || "contemporary",
+      description: this.userBrief,
+      project_id: this.projectId,
+    };
+
     try {
-      const { data, error } = await supabase.functions.invoke("mock-render", {
-        body: {
-          style: analysis.style || "contemporary",
-          description: this.userBrief,
-          project_id: this.projectId,
-        },
-      });
+      // Try real AI generation first
+      const { data, error } = await supabase.functions.invoke("generate-render", { body });
       if (error) throw error;
-      return data.renders || [];
+      if (data.renders && data.renders.length > 0) {
+        this.emit(`Engine: ${data.engine || "gemini"}`);
+        return data.renders;
+      }
+      throw new Error("No renders returned from AI generation");
     } catch (err) {
-      console.error("Render agent failed:", err);
-      this.emit("Render agent encountered an error");
-      return [];
+      console.warn("AI render failed, falling back to mock:", err);
+      this.emit("AI generation unavailable — using sample renders");
+      try {
+        const { data, error } = await supabase.functions.invoke("mock-render", { body });
+        if (error) throw error;
+        return data.renders || [];
+      } catch (fallbackErr) {
+        console.error("Mock render also failed:", fallbackErr);
+        this.emit("Render agent encountered an error");
+        return [];
+      }
     }
   }
 
