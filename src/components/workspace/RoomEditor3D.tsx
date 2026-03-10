@@ -14,7 +14,7 @@ interface PathData {
 
 interface MeshEntry {
   id: string;
-  type: "wall" | "floor";
+  type: "wall" | "floor" | "ceiling";
   geometry: THREE.BufferGeometry;
   position: [number, number, number];
   label: string;
@@ -113,6 +113,16 @@ function buildMeshes(
       position: [(minX + maxX) / 2, -0.025, (minZ + maxZ) / 2],
       label: "Floor",
     });
+
+    // Ceiling plane
+    const ceilingGeo = new THREE.BoxGeometry(floorW, 0.02, floorD);
+    meshes.push({
+      id: "ceiling",
+      type: "ceiling",
+      geometry: ceilingGeo,
+      position: [(minX + maxX) / 2, wallHeight + 0.01, (minZ + maxZ) / 2],
+      label: "Ceiling",
+    });
   }
 
   return meshes;
@@ -124,11 +134,13 @@ function RoomMesh({
   color,
   isSelected,
   onSelect,
+  opacity = 1,
 }: {
   entry: MeshEntry;
   color: string;
   isSelected: boolean;
   onSelect: (id: string) => void;
+  opacity?: number;
 }) {
   const [hovered, setHovered] = useState(false);
   const meshRef = useRef<THREE.Mesh>(null);
@@ -159,6 +171,9 @@ function RoomMesh({
           color={color}
           roughness={0.85}
           metalness={0.0}
+          transparent={opacity < 1}
+          opacity={opacity}
+          side={opacity < 1 ? THREE.DoubleSide : THREE.FrontSide}
         />
       </mesh>
       {outlineColor && (
@@ -205,6 +220,7 @@ export default function RoomEditor3D({
   void openings;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [colorMap, setColorMap] = useState<Record<string, string>>({});
+  const [showCeiling, setShowCeiling] = useState(true);
 
   const meshes = useMemo(
     () => buildMeshes(paths, gridScale, wallHeight, wallThickness),
@@ -253,6 +269,21 @@ export default function RoomEditor3D({
           </span>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowCeiling((v) => !v)}
+            className={`h-[24px] px-2 text-[10px] font-mono transition-colors ${
+              showCeiling
+                ? "bg-foreground text-background"
+                : "gallery-border text-muted-foreground hover:text-foreground"
+            }`}
+            title="Toggle ceiling visibility"
+          >
+            Ceiling
+          </button>
+          <span className="font-mono text-[9px] text-muted-foreground">
+            H: {wallHeight.toFixed(1)}m
+          </span>
+          <div className="w-px h-4 bg-border mx-1" />
           {onBack && (
             <button
               onClick={onBack}
@@ -296,15 +327,20 @@ export default function RoomEditor3D({
             <gridHelper args={[40, 40, "#cccccc", "#e5e5e5"]} position={[center[0], -0.03, center[2]]} />
 
             {/* Room meshes */}
-            {meshes.map((entry) => (
-              <RoomMesh
-                key={entry.id}
-                entry={entry}
-                color={colorMap[entry.id] || (entry.type === "floor" ? "#e8e5e0" : "#f5f5f4")}
-                isSelected={entry.id === selectedId}
-                onSelect={setSelectedId}
-              />
-            ))}
+            {meshes.map((entry) => {
+              if (entry.type === "ceiling" && !showCeiling) return null;
+              const defaultColor = entry.type === "floor" ? "#e8e5e0" : entry.type === "ceiling" ? "#fafaf9" : "#f5f5f4";
+              return (
+                <RoomMesh
+                  key={entry.id}
+                  entry={entry}
+                  color={colorMap[entry.id] || defaultColor}
+                  isSelected={entry.id === selectedId}
+                  onSelect={setSelectedId}
+                  opacity={entry.type === "ceiling" ? 0.35 : 1}
+                />
+              );
+            })}
           </Canvas>
         </div>
 

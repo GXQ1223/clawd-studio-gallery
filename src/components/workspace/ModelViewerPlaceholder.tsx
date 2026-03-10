@@ -622,6 +622,22 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
               ))}
             </div>
             <div className="w-px h-4 bg-border mx-1" />
+            {/* Ceiling height */}
+            <div className="flex items-center gap-1">
+              <span className="font-mono text-[9px] text-muted-foreground">H:</span>
+              <input
+                type="range"
+                min="2.0"
+                max="5.0"
+                step="0.1"
+                value={ceilingHeight}
+                onChange={(e) => setCeilingHeight(parseFloat(e.target.value))}
+                className="w-[60px] h-[4px] accent-foreground"
+                title={`Ceiling height: ${ceilingHeight.toFixed(1)}m`}
+              />
+              <span className="font-mono text-[9px] text-muted-foreground w-[30px]">{ceilingHeight.toFixed(1)}m</span>
+            </div>
+            <div className="w-px h-4 bg-border mx-1" />
             <button
               onClick={() => {
                 if (activePath.length > 0) {
