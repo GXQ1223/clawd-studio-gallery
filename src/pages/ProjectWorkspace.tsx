@@ -141,6 +141,7 @@ const ProjectWorkspace = () => {
       name: `Upload ${new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`,
       category: "perspective" as const,
       date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+      aiGenerated: false,
       imageUrl: url,
     }));
     setKeptAssets((prev) => [...prev, ...newAssets]);
