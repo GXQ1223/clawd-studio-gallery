@@ -234,13 +234,13 @@ function buildMeshes(
 // ─── Individual mesh with click/hover ────────────────────
 function RoomMesh({
   entry,
-  color,
+  material,
   isSelected,
   onSelect,
   opacity = 1,
 }: {
   entry: MeshEntry;
-  color: string;
+  material: MaterialState;
   isSelected: boolean;
   onSelect: (id: string) => void;
   opacity?: number;
@@ -258,7 +258,6 @@ function RoomMesh({
     [entry.id, onSelect]
   );
 
-  // Outline effect for selected
   const outlineColor = isSelected ? "#2563eb" : hovered ? "#64748b" : null;
 
   return (
@@ -271,9 +270,9 @@ function RoomMesh({
         onPointerOut={() => { setHovered(false); document.body.style.cursor = "default"; }}
       >
         <meshStandardMaterial
-          color={color}
-          roughness={0.85}
-          metalness={0.0}
+          color={material.hex}
+          roughness={material.roughness}
+          metalness={material.metalness}
           transparent={opacity < 1}
           opacity={opacity}
           side={opacity < 1 ? THREE.DoubleSide : THREE.FrontSide}
@@ -289,25 +288,78 @@ function RoomMesh({
   );
 }
 
-// ─── Color presets ───────────────────────────────────────
-const COLOR_PRESETS = [
-  { name: "White", hex: "#f5f5f4" },
-  { name: "Warm White", hex: "#faf5ef" },
-  { name: "Light Gray", hex: "#d4d4d4" },
-  { name: "Concrete", hex: "#a3a3a3" },
-  { name: "Sage", hex: "#b5c4a1" },
-  { name: "Sky", hex: "#a5c8e1" },
-  { name: "Blush", hex: "#e8c4c4" },
-  { name: "Sand", hex: "#d4c5a9" },
-  { name: "Terracotta", hex: "#c67d5b" },
-  { name: "Navy", hex: "#2e3a5c" },
-  { name: "Forest", hex: "#3d5a3d" },
-  { name: "Charcoal", hex: "#404040" },
-  { name: "Oak", hex: "#c69c6d" },
-  { name: "Walnut", hex: "#5c4033" },
-  { name: "Maple", hex: "#e0c08d" },
-  { name: "Slate", hex: "#708090" },
+// ─── Material presets with PBR properties ────────────────
+interface MaterialPreset {
+  name: string;
+  hex: string;
+  roughness: number;
+  metalness: number;
+  category: MaterialCategory;
+}
+
+type MaterialCategory = "Paint" | "Wood" | "Stone" | "Tile" | "Metal";
+
+const MATERIAL_CATEGORIES: MaterialCategory[] = ["Paint", "Wood", "Stone", "Tile", "Metal"];
+
+const MATERIAL_PRESETS: MaterialPreset[] = [
+  // Paint
+  { name: "White", hex: "#f5f5f4", roughness: 0.9, metalness: 0, category: "Paint" },
+  { name: "Warm White", hex: "#faf5ef", roughness: 0.9, metalness: 0, category: "Paint" },
+  { name: "Light Gray", hex: "#d4d4d4", roughness: 0.85, metalness: 0, category: "Paint" },
+  { name: "Sage", hex: "#b5c4a1", roughness: 0.85, metalness: 0, category: "Paint" },
+  { name: "Sky Blue", hex: "#a5c8e1", roughness: 0.85, metalness: 0, category: "Paint" },
+  { name: "Blush", hex: "#e8c4c4", roughness: 0.85, metalness: 0, category: "Paint" },
+  { name: "Navy", hex: "#2e3a5c", roughness: 0.8, metalness: 0, category: "Paint" },
+  { name: "Forest", hex: "#3d5a3d", roughness: 0.8, metalness: 0, category: "Paint" },
+  { name: "Charcoal", hex: "#404040", roughness: 0.8, metalness: 0, category: "Paint" },
+  { name: "Terracotta", hex: "#c67d5b", roughness: 0.85, metalness: 0, category: "Paint" },
+  // Wood
+  { name: "Light Oak", hex: "#c69c6d", roughness: 0.7, metalness: 0, category: "Wood" },
+  { name: "Maple", hex: "#e0c08d", roughness: 0.65, metalness: 0, category: "Wood" },
+  { name: "Pine", hex: "#d4b483", roughness: 0.7, metalness: 0, category: "Wood" },
+  { name: "Walnut", hex: "#5c4033", roughness: 0.6, metalness: 0, category: "Wood" },
+  { name: "Cherry", hex: "#8b4513", roughness: 0.6, metalness: 0, category: "Wood" },
+  { name: "Ebony", hex: "#3b2f2f", roughness: 0.5, metalness: 0.02, category: "Wood" },
+  { name: "Bamboo", hex: "#c8b560", roughness: 0.65, metalness: 0, category: "Wood" },
+  { name: "Teak", hex: "#9c7a3c", roughness: 0.6, metalness: 0, category: "Wood" },
+  // Stone
+  { name: "Concrete", hex: "#a3a3a3", roughness: 0.95, metalness: 0, category: "Stone" },
+  { name: "Limestone", hex: "#d4c5a9", roughness: 0.9, metalness: 0, category: "Stone" },
+  { name: "Slate", hex: "#708090", roughness: 0.8, metalness: 0.05, category: "Stone" },
+  { name: "Granite", hex: "#696969", roughness: 0.6, metalness: 0.08, category: "Stone" },
+  { name: "Marble White", hex: "#f0ece2", roughness: 0.3, metalness: 0.05, category: "Stone" },
+  { name: "Marble Black", hex: "#2d2d2d", roughness: 0.3, metalness: 0.05, category: "Stone" },
+  { name: "Sandstone", hex: "#c2a878", roughness: 0.9, metalness: 0, category: "Stone" },
+  { name: "Travertine", hex: "#e6d5b8", roughness: 0.7, metalness: 0, category: "Stone" },
+  // Tile
+  { name: "White Tile", hex: "#f8f8f8", roughness: 0.2, metalness: 0.05, category: "Tile" },
+  { name: "Cream Tile", hex: "#f5f0e1", roughness: 0.25, metalness: 0.03, category: "Tile" },
+  { name: "Gray Tile", hex: "#b0b0b0", roughness: 0.3, metalness: 0.05, category: "Tile" },
+  { name: "Blue Tile", hex: "#4a7c9b", roughness: 0.2, metalness: 0.05, category: "Tile" },
+  { name: "Green Tile", hex: "#5a8a6a", roughness: 0.2, metalness: 0.05, category: "Tile" },
+  { name: "Black Tile", hex: "#1a1a1a", roughness: 0.15, metalness: 0.08, category: "Tile" },
+  { name: "Terracotta Tile", hex: "#b5651d", roughness: 0.6, metalness: 0, category: "Tile" },
+  { name: "Mosaic", hex: "#6b8e8e", roughness: 0.3, metalness: 0.05, category: "Tile" },
+  // Metal
+  { name: "Brushed Steel", hex: "#c0c0c0", roughness: 0.4, metalness: 0.9, category: "Metal" },
+  { name: "Polished Chrome", hex: "#e8e8e8", roughness: 0.1, metalness: 0.95, category: "Metal" },
+  { name: "Copper", hex: "#b87333", roughness: 0.35, metalness: 0.85, category: "Metal" },
+  { name: "Gold", hex: "#d4a843", roughness: 0.3, metalness: 0.9, category: "Metal" },
+  { name: "Bronze", hex: "#8b7355", roughness: 0.45, metalness: 0.8, category: "Metal" },
+  { name: "Iron", hex: "#48494b", roughness: 0.7, metalness: 0.75, category: "Metal" },
+  { name: "Brass", hex: "#c5a846", roughness: 0.35, metalness: 0.85, category: "Metal" },
+  { name: "Zinc", hex: "#8a9a9a", roughness: 0.5, metalness: 0.7, category: "Metal" },
 ];
+
+interface MaterialState {
+  hex: string;
+  roughness: number;
+  metalness: number;
+}
+
+const DEFAULT_WALL_MATERIAL: MaterialState = { hex: "#f5f5f4", roughness: 0.9, metalness: 0 };
+const DEFAULT_FLOOR_MATERIAL: MaterialState = { hex: "#e0c08d", roughness: 0.65, metalness: 0 }; // Maple wood
+const DEFAULT_CEILING_MATERIAL: MaterialState = { hex: "#fafaf9", roughness: 0.9, metalness: 0 };
 
 // ─── Main component ─────────────────────────────────────
 export default function RoomEditor3D({
@@ -320,8 +372,9 @@ export default function RoomEditor3D({
   onExportGlb,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [colorMap, setColorMap] = useState<Record<string, string>>({});
+  const [materialMap, setMaterialMap] = useState<Record<string, MaterialState>>({});
   const [showCeiling, setShowCeiling] = useState(true);
+  const [activeCategory, setActiveCategory] = useState<MaterialCategory>("Paint");
 
   const meshes = useMemo(
     () => buildMeshes(paths, gridScale, wallHeight, wallThickness, openings),
@@ -330,10 +383,31 @@ export default function RoomEditor3D({
 
   const selectedMesh = meshes.find((m) => m.id === selectedId);
 
-  const handleColorChange = useCallback(
-    (color: string) => {
+  const getMaterial = useCallback((id: string, type: "wall" | "floor" | "ceiling"): MaterialState => {
+    if (materialMap[id]) return materialMap[id];
+    if (type === "floor") return DEFAULT_FLOOR_MATERIAL;
+    if (type === "ceiling") return DEFAULT_CEILING_MATERIAL;
+    return DEFAULT_WALL_MATERIAL;
+  }, [materialMap]);
+
+  const handleMaterialChange = useCallback(
+    (preset: MaterialPreset) => {
       if (!selectedId) return;
-      setColorMap((prev) => ({ ...prev, [selectedId]: color }));
+      setMaterialMap((prev) => ({
+        ...prev,
+        [selectedId]: { hex: preset.hex, roughness: preset.roughness, metalness: preset.metalness },
+      }));
+    },
+    [selectedId]
+  );
+
+  const handleColorChange = useCallback(
+    (hex: string) => {
+      if (!selectedId) return;
+      setMaterialMap((prev) => {
+        const existing = prev[selectedId] || DEFAULT_WALL_MATERIAL;
+        return { ...prev, [selectedId]: { ...existing, hex } };
+      });
     },
     [selectedId]
   );
@@ -430,12 +504,11 @@ export default function RoomEditor3D({
             {/* Room meshes */}
             {meshes.map((entry) => {
               if (entry.type === "ceiling" && !showCeiling) return null;
-              const defaultColor = entry.type === "floor" ? "#e8e5e0" : entry.type === "ceiling" ? "#fafaf9" : "#f5f5f4";
               return (
                 <RoomMesh
                   key={entry.id}
                   entry={entry}
-                  color={colorMap[entry.id] || defaultColor}
+                  material={getMaterial(entry.id, entry.type)}
                   isSelected={entry.id === selectedId}
                   onSelect={setSelectedId}
                   opacity={entry.type === "ceiling" ? 0.35 : 1}
@@ -447,67 +520,106 @@ export default function RoomEditor3D({
 
         {/* Properties panel */}
         <div className="w-[220px] shrink-0 overflow-y-auto p-3" style={{ borderLeft: "1px solid hsl(var(--border))" }}>
-          {selectedMesh ? (
-            <div className="space-y-4">
-              <div>
-                <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-1">Selected</p>
-                <p className="font-mono text-[12px] font-medium">{selectedMesh.label}</p>
-                <p className="font-mono text-[10px] text-muted-foreground">{selectedMesh.type}</p>
-              </div>
+          {selectedMesh ? (() => {
+            const currentMat = getMaterial(selectedId!, selectedMesh.type);
+            const categoryPresets = MATERIAL_PRESETS.filter((p) => p.category === activeCategory);
+            return (
+              <div className="space-y-4">
+                <div>
+                  <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-1">Selected</p>
+                  <p className="font-mono text-[12px] font-medium">{selectedMesh.label}</p>
+                  <p className="font-mono text-[10px] text-muted-foreground">{selectedMesh.type}</p>
+                </div>
 
-              <div>
-                <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-2">Color</p>
-                <input
-                  type="color"
-                  value={colorMap[selectedId!] || (selectedMesh.type === "floor" ? "#e8e5e0" : "#f5f5f4")}
-                  onChange={(e) => handleColorChange(e.target.value)}
-                  className="w-full h-[32px] cursor-pointer border-0 p-0 bg-transparent"
-                />
-              </div>
+                <div>
+                  <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-2">Color</p>
+                  <input
+                    type="color"
+                    value={currentMat.hex}
+                    onChange={(e) => handleColorChange(e.target.value)}
+                    className="w-full h-[32px] cursor-pointer border-0 p-0 bg-transparent"
+                  />
+                </div>
 
-              <div>
-                <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-2">Presets</p>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {COLOR_PRESETS.map((c) => (
-                    <button
-                      key={c.hex}
-                      onClick={() => handleColorChange(c.hex)}
-                      className="w-full aspect-square gallery-border hover:scale-110 transition-transform relative group"
-                      style={{ backgroundColor: c.hex }}
-                      title={c.name}
-                    >
-                      {(colorMap[selectedId!] || "") === c.hex && (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                          <div className="w-2 h-2 rounded-full bg-foreground/60" />
-                        </div>
-                      )}
-                    </button>
-                  ))}
+                <div>
+                  <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-1">Material</p>
+                  <div className="flex items-center text-[8px] font-mono text-muted-foreground mb-2">
+                    <span>R:{currentMat.roughness.toFixed(2)}</span>
+                    <span className="mx-1">·</span>
+                    <span>M:{currentMat.metalness.toFixed(2)}</span>
+                  </div>
+                  {/* Category tabs */}
+                  <div className="flex flex-wrap gap-0.5 mb-2">
+                    {MATERIAL_CATEGORIES.map((cat) => (
+                      <button
+                        key={cat}
+                        onClick={() => setActiveCategory(cat)}
+                        className={`h-[20px] px-1.5 text-[8px] font-mono transition-colors ${
+                          activeCategory === cat
+                            ? "bg-foreground text-background"
+                            : "gallery-border text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Material swatches */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {categoryPresets.map((preset) => {
+                      const isActive = currentMat.hex === preset.hex
+                        && currentMat.roughness === preset.roughness
+                        && currentMat.metalness === preset.metalness;
+                      return (
+                        <button
+                          key={`${preset.category}-${preset.name}`}
+                          onClick={() => handleMaterialChange(preset)}
+                          className="w-full aspect-square gallery-border hover:scale-110 transition-transform relative"
+                          style={{
+                            backgroundColor: preset.hex,
+                            backgroundImage: preset.metalness > 0.5
+                              ? `linear-gradient(135deg, ${preset.hex} 0%, rgba(255,255,255,0.3) 50%, ${preset.hex} 100%)`
+                              : undefined,
+                          }}
+                          title={`${preset.name}\nR:${preset.roughness} M:${preset.metalness}`}
+                        >
+                          {isActive && (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                              <div className="w-2 h-2 rounded-full bg-foreground/60" />
+                            </div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div>
+                  <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-2">All Surfaces</p>
+                  <div className="space-y-0.5">
+                    {meshes.map((m) => {
+                      const mat = getMaterial(m.id, m.type);
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => setSelectedId(m.id)}
+                          className={`w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-secondary/50 transition-colors ${
+                            m.id === selectedId ? "bg-secondary" : ""
+                          }`}
+                        >
+                          <div
+                            className="w-3 h-3 shrink-0 gallery-border"
+                            style={{ backgroundColor: mat.hex }}
+                          />
+                          <span className="font-mono text-[10px] truncate">{m.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
-
-              <div>
-                <p className="font-mono text-[9px] text-muted-foreground uppercase tracking-wider mb-2">All Surfaces</p>
-                <div className="space-y-0.5">
-                  {meshes.map((m) => (
-                    <button
-                      key={m.id}
-                      onClick={() => setSelectedId(m.id)}
-                      className={`w-full flex items-center gap-2 px-2 py-1 text-left hover:bg-secondary/50 transition-colors ${
-                        m.id === selectedId ? "bg-secondary" : ""
-                      }`}
-                    >
-                      <div
-                        className="w-3 h-3 shrink-0 gallery-border"
-                        style={{ backgroundColor: colorMap[m.id] || (m.type === "floor" ? "#e8e5e0" : "#f5f5f4") }}
-                      />
-                      <span className="font-mono text-[10px] truncate">{m.label}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
+            );
+          })() : (
             <div className="flex items-center justify-center h-full text-center">
               <div className="space-y-2">
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="text-muted-foreground/30 mx-auto">
@@ -516,7 +628,7 @@ export default function RoomEditor3D({
                   <path d="M2 12l10 5 10-5" />
                 </svg>
                 <p className="font-mono text-[10px] text-muted-foreground">
-                  Click a wall or floor<br />to change its color
+                  Click a wall or floor<br />to change its material
                 </p>
               </div>
             </div>
