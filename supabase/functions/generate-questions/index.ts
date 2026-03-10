@@ -1,9 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+const ALLOWED_ORIGIN = Deno.env.get("CORS_ALLOWED_ORIGIN") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 const SYSTEM_PROMPT = `You are a senior interior/architectural design consultant conducting a discovery session with a client. Based on their initial brief, generate 4–6 focused follow-up questions to gather the information needed to produce excellent design renders and product sourcing.
@@ -97,7 +99,8 @@ serve(async (req) => {
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`OpenAI API error (${response.status}): ${errText}`);
+      console.error(`OpenAI API error (${response.status}):`, errText);
+      throw new Error("Question generation failed. Please try again.");
     }
 
     const data = await response.json();

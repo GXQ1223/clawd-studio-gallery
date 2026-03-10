@@ -2,10 +2,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGIN = Deno.env.get("CORS_ALLOWED_ORIGIN") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 // Fallback Unsplash URLs when no API key is configured
@@ -36,6 +38,30 @@ const FALLBACK_RENDERS: Record<string, string[]> = {
     "https://images.unsplash.com/photo-1616486338812-3dadae4b4ace?w=1200&q=80",
   ],
 };
+
+/** Validate that a URL is a safe HTTP(S) URL (prevents SSRF) */
+function isValidExternalUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+    const hostname = parsed.hostname;
+    // Block private/internal IPs
+    if (
+      hostname === "localhost" ||
+      hostname === "127.0.0.1" ||
+      hostname === "0.0.0.0" ||
+      hostname.startsWith("10.") ||
+      hostname.startsWith("192.168.") ||
+      hostname.startsWith("172.") ||
+      hostname === "169.254.169.254" || // AWS metadata
+      hostname.endsWith(".internal") ||
+      hostname.endsWith(".local")
+    ) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** Extracted style features from reference images (CLIP-like analysis) */
 interface StyleEmbedding {
@@ -217,7 +243,8 @@ async function generateWithControlNet(
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Replicate API error (${response.status}): ${errText}`);
+    console.error(`Replicate API error (${response.status}):`, errText);
+    throw new Error("Floor plan conditioning failed. Please try again.");
   }
 
   const prediction = await response.json();
@@ -287,7 +314,8 @@ async function generateWithDallE(
 
     if (!response.ok) {
       const err = await response.text();
-      throw new Error(`DALL-E API error (${response.status}): ${err}`);
+      console.error(`DALL-E API error (${response.status}):`, err);
+      throw new Error("Image generation failed. Please try again.");
     }
 
     const data = await response.json();
@@ -371,10 +399,30 @@ serve(async (req) => {
     }
 
     const { style, description, project_id, reference_image_urls, floor_plan_url } = await req.json();
+
+    // Validate user-provided URLs to prevent SSRF
+    if (reference_image_urls && Array.isArray(reference_image_urls)) {
+      for (const url of reference_image_urls) {
+        if (typeof url !== "string" || !isValidExternalUrl(url)) {
+          return new Response(
+            JSON.stringify({ success: false, error: "Invalid reference image URL" }),
+            { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      }
+    }
+    if (floor_plan_url && typeof floor_plan_url === "string" && !isValidExternalUrl(floor_plan_url)) {
+      return new Response(
+        JSON.stringify({ success: false, error: "Invalid floor plan URL" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
     const replicateKey = Deno.env.get("REPLICATE_API_TOKEN");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL");
-    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    // Re-read env vars (earlier ones were scoped for auth)
+    const supabaseUrl2 = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey2 = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
     const startTime = Date.now();
     const styleLabel =
@@ -415,8 +463,8 @@ serve(async (req) => {
 
     // Upload helper
     const supabase =
-      supabaseUrl && supabaseServiceKey
-        ? createClient(supabaseUrl, supabaseServiceKey)
+      supabaseUrl2 && supabaseServiceKey2
+        ? createClient(supabaseUrl2, supabaseServiceKey2)
         : null;
 
     // Step: Extract style embedding from reference images (CLIP-like style transfer)
@@ -486,7 +534,8 @@ serve(async (req) => {
       });
       if (!res.ok) {
         const errText = await res.text();
-        throw new Error(`Replicate SDXL error (${res.status}): ${errText}`);
+        console.error(`Replicate SDXL error (${res.status}):`, errText);
+        throw new Error("Image generation failed. Please try again.");
       }
       const prediction = await res.json();
       let output = prediction.output;

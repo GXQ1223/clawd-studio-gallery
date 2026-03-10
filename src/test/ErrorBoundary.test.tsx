@@ -37,6 +37,7 @@ describe("ErrorBoundary", () => {
   });
 
   it("should recover when Try again is clicked", () => {
+    // First render with shouldThrow=false, then rerender with true to trigger error
     const { rerender } = render(
       <ErrorBoundary>
         <ThrowingComponent shouldThrow={true} />
@@ -44,8 +45,16 @@ describe("ErrorBoundary", () => {
     );
     expect(screen.getByText("Something went wrong")).toBeInTheDocument();
 
+    // Rerender with non-throwing child before clicking Try again
+    rerender(
+      <ErrorBoundary>
+        <ThrowingComponent shouldThrow={false} />
+      </ErrorBoundary>
+    );
+    // Click Try again to reset error state
     fireEvent.click(screen.getByText("Try again"));
 
+    // After reset with non-throwing child, normal content should show
     rerender(
       <ErrorBoundary>
         <ThrowingComponent shouldThrow={false} />

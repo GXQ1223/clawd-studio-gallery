@@ -1,9 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGIN = Deno.env.get("CORS_ALLOWED_ORIGIN") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 interface Product {
@@ -127,7 +129,8 @@ async function curateWithLLM(
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`OpenAI API error (${response.status}): ${errText}`);
+    console.error(`OpenAI API error (${response.status}):`, errText);
+    throw new Error("Product curation failed. Please try again.");
   }
 
   const data = await response.json();

@@ -2,10 +2,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const ALLOWED_ORIGIN = getEnv("CORS_ALLOWED_ORIGIN") || "*";
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 function getEnv(key: string): string | undefined {
@@ -149,7 +151,7 @@ async function callGeminiModel(prompt: string, model: string): Promise<string | 
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Gemini API error (${model}, ${response.status}):`, errorText);
-      throw new Error(`Gemini API (${model}) returned ${response.status}: ${errorText.slice(0, 200)}`);
+      throw new Error("Image generation failed. Please try again later.");
     }
 
     const data = await response.json();

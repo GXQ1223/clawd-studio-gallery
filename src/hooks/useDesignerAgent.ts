@@ -64,6 +64,8 @@ export function useDesignerAgent(projectId: string, projectType?: string) {
           };
         });
       }
+    }).catch((err) => {
+      console.error("Failed to load persisted results:", err);
     });
 
     // Load persisted conversation history and feed entries
@@ -99,6 +101,8 @@ export function useDesignerAgent(projectId: string, projectType?: string) {
 
       conversationRef.current = restoredConversation;
       setFeedEntries(restoredFeed);
+    }).catch((err) => {
+      console.error("Failed to load project messages:", err);
     });
   }, [projectId]);
 

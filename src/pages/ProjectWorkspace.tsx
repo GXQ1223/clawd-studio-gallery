@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useParams, Navigate, useNavigate } from "react-router-dom";
 import { useProject, useUpdateProject, type Project } from "@/hooks/useProjects";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,11 +29,54 @@ const ProjectWorkspace = () => {
   const [deletedRenderIds, setDeletedRenderIds] = useState<Set<string>>(() => {
     try {
       const stored = localStorage.getItem(`deleted-renders-${id}`);
-      return stored ? new Set(JSON.parse(stored)) : new Set();
+      if (!stored) return new Set();
+      const parsed = JSON.parse(stored);
+      if (!Array.isArray(parsed) || !parsed.every((x) => typeof x === "string")) return new Set();
+      return new Set(parsed);
     } catch { return new Set(); }
   });
   const [sharing, setSharing] = useState(false);
   const { runOrchestration, completePlanning, isAnalyzing, results, feedEntries, acknowledgment, planningQuestions, sessions, toggleCron, refreshSessions } = useDesignerAgent(id || "", project?.project_type);
+
+  // Reload reference images from persisted agent_messages on mount
+  useEffect(() => {
+    if (!id) return;
+    supabase
+      .from("agent_messages")
+      .select("metadata")
+      .eq("project_id", id)
+      .eq("message_type", "user_message")
+      .not("metadata->reference_images", "is", null)
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        if (!data || data.length === 0) return;
+        const restoredAssets: Asset[] = [];
+        for (const row of data) {
+          const urls = (row.metadata as Record<string, unknown>)?.reference_images;
+          if (!Array.isArray(urls)) continue;
+          for (const url of urls as string[]) {
+            const alreadyKept = restoredAssets.some((a) => a.imageUrl === url);
+            if (alreadyKept) continue;
+            restoredAssets.push({
+              id: `ref-${url.split("/").pop()?.split(".")[0] || Date.now()}`,
+              name: "Reference Image",
+              category: "sketch",
+              date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+              aiGenerated: false,
+              imageUrl: url,
+            });
+          }
+        }
+        if (restoredAssets.length > 0) {
+          setKeptAssets((prev) => {
+            const existingUrls = new Set(prev.map((a) => a.imageUrl));
+            const newOnes = restoredAssets.filter((a) => !existingUrls.has(a.imageUrl));
+            return newOnes.length > 0 ? [...prev, ...newOnes] : prev;
+          });
+          setHasStarted(true);
+        }
+      });
+  }, [id]);
 
   // Submit from empty brief prompt or chat
   const handleBriefSubmit = useCallback((brief: string) => {
@@ -68,12 +111,20 @@ const ProjectWorkspace = () => {
         }
         if (referenceImageUrls.length > 0) {
           toast(`Uploaded ${referenceImageUrls.length} reference image(s)`);
+          // Persist reference URLs so they survive page refresh
+          await supabase.from("agent_messages").insert({
+            project_id: id,
+            message_type: "user_message" as const,
+            content: `Uploaded ${referenceImageUrls.length} reference image(s)`,
+            metadata: { reference_images: referenceImageUrls },
+            user_id: user?.id || null,
+          });
         }
       }
 
       runOrchestration(brief, referenceImageUrls);
     },
-    [runOrchestration, id]
+    [runOrchestration, id, user?.id]
   );
 
   const handleCompletePlanning = useCallback((answers: Record<string, string>) => {
