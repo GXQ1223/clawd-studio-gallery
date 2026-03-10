@@ -39,6 +39,7 @@ interface Props {
   openings?: Opening[];
   onBack?: () => void;
   onExportGlb?: () => void;
+  isExporting?: boolean;
 }
 
 // ─── Grid scale → meters conversion ──────────────────────
@@ -370,6 +371,7 @@ export default function RoomEditor3D({
   openings = [],
   onBack,
   onExportGlb,
+  isExporting = false,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [materialMap, setMaterialMap] = useState<Record<string, MaterialState>>({});
@@ -470,9 +472,10 @@ export default function RoomEditor3D({
           {onExportGlb && (
             <button
               onClick={onExportGlb}
-              className="h-[24px] px-2 gallery-border text-[10px] font-mono text-muted-foreground hover:text-foreground"
+              disabled={isExporting}
+              className="h-[24px] px-2 gallery-border text-[10px] font-mono text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Export GLB
+              {isExporting ? "Exporting..." : "Export GLB"}
             </button>
           )}
         </div>

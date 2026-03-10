@@ -427,9 +427,11 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
   }, [wallPaths, activePath]);
 
   // Export GLB via edge function
+  const [isExporting, setIsExporting] = useState(false);
   const handleExportGlb = useCallback(async () => {
     if (!projectId || roomPaths.length === 0) return;
-    toast("Exporting GLB...");
+    setIsExporting(true);
+    toast("Generating GLB model...");
     try {
       const { data, error } = await supabase.functions.invoke("generate-3d-model", {
         body: {
@@ -444,9 +446,11 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
       if (error) throw error;
       if (!data?.success) throw new Error(data?.error || "Export failed");
       window.open(data.model_url, "_blank");
-      toast.success("GLB exported!");
+      toast.success("GLB exported successfully!");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "GLB export failed");
+    } finally {
+      setIsExporting(false);
     }
   }, [projectId, roomPaths, gridScale, ceilingHeight, openings]);
 
@@ -974,6 +978,7 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
         openings={openings}
         onBack={() => setMode("sketch")}
         onExportGlb={handleExportGlb}
+        isExporting={isExporting}
       />
     );
   }
