@@ -1,0 +1,8 @@
+{
+  "name": "@clawd/skill-cli",
+  "version": "1.0.0",
+  "description": "CLI for installing and managing Clawd Studio skills",
+  "bin": { "clawd-skill": "./bin/clawd-skill.js" },
+  "files": ["bin"],
+  "license": "MIT"
+}

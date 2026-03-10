@@ -1,0 +1,713 @@
+{
+  "project": "clawd-studio-gallery",
+  "description": "Modular skill plugin architecture work queue for Clawd Studio AI designer agent",
+  "version": "1.0.0",
+  "last_updated": "2026-03-10T09:30:00Z",
+  "tasks": [
+    {
+      "id": "1.1",
+      "phase": 1,
+      "title": "Define core skill type system",
+      "description": "Create src/lib/skills/types.ts defining the SkillPlugin interface, SkillManifest type, SkillContext interface, AgentToolDefinition type, SkillHooks interface, SkillToolResult type, SkillEvent type, and the Discipline union type ('interior' | 'architectural' | 'landscape' | 'industrial'). These are the contracts that all skills must implement.",
+      "status": "done",
+      "priority": "critical",
+      "estimated_effort": "0.5 day",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "src/lib/skills/types.ts exists and exports all required types",
+        "TypeScript compiles with zero errors",
+        "SkillPlugin interface has onLoad, executeTool, onUnload methods",
+        "SkillManifest has slug, name, version, disciplines, requiredSecrets, agentTools, hooks fields",
+        "SkillContext exposes projectId, userId, projectType, supabase, addFeedEntry, getEnabledSkills, emitEvent"
+      ]
+    },
+    {
+      "id": "1.2",
+      "phase": 1,
+      "title": "Build SkillRegistry class",
+      "description": "Create src/lib/skills/registry.ts implementing the SkillRegistry class. It must support: loadAll(enabledSlugs, context) to auto-discover and instantiate skills from src/skills/*/skill.json; register(skill) for manual registration; setEnabled(slug, enabled) for runtime toggling; getAllToolDefinitions() returning all AgentToolDefinition[] from enabled skills; executeTool(toolName, params, context) dispatching to the correct skill; fireHook(hookName, ...args) broadcasting lifecycle events to all enabled skills; getSkillsForDiscipline(discipline) filtering by discipline.",
+      "status": "done",
+      "priority": "critical",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "1.1"
+      ],
+      "acceptance_criteria": [
+        "src/lib/skills/registry.ts exists and exports SkillRegistry class",
+        "loadAll correctly discovers and instantiates skills from src/skills/*/skill.json",
+        "executeTool routes to the correct skill by matching toolName against manifest.agentTools[].name",
+        "fireHook calls the hook on all enabled skills that declare it in their manifest.hooks",
+        "setEnabled persists to project_skills table via supabase client",
+        "TypeScript compiles with zero errors",
+        "Unit tests pass (see task 1.8)"
+      ]
+    },
+    {
+      "id": "1.3",
+      "phase": 1,
+      "title": "Refactor DesignerAgent to use SkillRegistry",
+      "description": "Refactor src/lib/designerAgent.ts so that: (1) The constructor accepts an optional SkillRegistry parameter. (2) runFullOrchestration() no longer directly calls generate-render or mock-sourcing edge functions — instead it calls registry.executeTool() for all skill-provided capabilities. (3) After brief analysis, it calls registry.fireHook('onBriefAnalyzed', analysis, context). (4) After session completion, it calls registry.fireHook('onSessionComplete', session, result, context). Keep the fallback to mock behavior when no registry is provided (for backward compatibility during migration).",
+      "status": "done",
+      "priority": "critical",
+      "estimated_effort": "1.5 days",
+      "dependencies": [
+        "1.2"
+      ],
+      "acceptance_criteria": [
+        "DesignerAgent constructor accepts optional SkillRegistry",
+        "runFullOrchestration uses registry.executeTool for render generation and product sourcing",
+        "Direct calls to generate-render and mock-sourcing edge functions are removed from DesignerAgent",
+        "Fallback mock behavior works when registry is null/undefined",
+        "Existing workspace UI still works end-to-end after refactor",
+        "TypeScript compiles with zero errors"
+      ]
+    },
+    {
+      "id": "1.4",
+      "phase": 1,
+      "title": "Add LLM-directed tool planning",
+      "description": "Update the analyze-brief Supabase edge function (supabase/functions/analyze-brief/index.ts) to accept a toolDefinitions array in the request body. When toolDefinitions are provided, include them in the GPT-4o-mini system prompt as JSON Schema function definitions and ask the model to return a structured execution plan: an ordered array of { tool: string, params: object, rationale: string } steps. The DesignerAgent should then execute these steps in order via registry.executeTool(). This replaces the current hardcoded render+sourcing sequence.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "1.3"
+      ],
+      "acceptance_criteria": [
+        "analyze-brief edge function accepts toolDefinitions in request body",
+        "When toolDefinitions provided, response includes executionPlan array",
+        "Each plan step has tool, params, and rationale fields",
+        "DesignerAgent executes plan steps in order via registry.executeTool",
+        "Integration test demonstrates LLM choosing correct tools for a given brief"
+      ]
+    },
+    {
+      "id": "1.5",
+      "phase": 1,
+      "title": "Add project_skills database table",
+      "description": "Create a new Supabase migration that adds a project_skills table with columns: id (uuid PK), project_id (uuid FK to projects), skill_slug (text), enabled (boolean default true), config (jsonb default '{}'), created_at (timestamptz). Add a UNIQUE constraint on (project_id, skill_slug). Enable RLS with a policy that allows users to manage skills for their own projects. Run the migration.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "0.5 day",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "Migration file exists in supabase/migrations/",
+        "project_skills table exists in the database",
+        "RLS is enabled with correct user-scoped policy",
+        "UNIQUE constraint on (project_id, skill_slug) works",
+        "TypeScript types in src/integrations/supabase/types.ts are regenerated to include project_skills"
+      ]
+    },
+    {
+      "id": "1.6",
+      "phase": 1,
+      "title": "Build useSkillRegistry React hook",
+      "description": "Create src/hooks/useSkillRegistry.ts. This hook accepts projectId and projectType. On mount, it queries project_skills for the project's enabled skills, instantiates the SkillRegistry, calls registry.loadAll(enabledSlugs, context), and returns { registry, enabledSlugs, toggleSkill, isLoading }. The toggleSkill function upserts to project_skills and calls registry.setEnabled(). Pass the registry into useDesignerAgent.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "0.5 day",
+      "dependencies": [
+        "1.2",
+        "1.5"
+      ],
+      "acceptance_criteria": [
+        "src/hooks/useSkillRegistry.ts exists and exports useSkillRegistry",
+        "Hook loads enabled skills from project_skills on mount",
+        "toggleSkill updates DB and registry in sync",
+        "Registry is passed to useDesignerAgent",
+        "TypeScript compiles with zero errors"
+      ]
+    },
+    {
+      "id": "1.7",
+      "phase": 1,
+      "title": "Rotate exposed Supabase credentials from git history",
+      "description": "The Supabase anon key and service role key committed in an earlier commit (88c219b) are still readable in the public git history. Immediately: (1) Go to Supabase dashboard > Settings > API and rotate both the anon key and service role key. (2) Update the production environment variables with the new keys. (3) Use git filter-repo or BFG Repo Cleaner to remove the .env file from git history entirely. (4) Force-push the cleaned history. (5) Add .env to .gitignore if not already present.",
+      "status": "blocked",
+      "priority": "critical",
+      "estimated_effort": "0.5 day",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "Old Supabase anon key is rotated and no longer valid",
+        "Old service role key is rotated and no longer valid",
+        "git log --all -- .env shows no .env file in any commit",
+        ".env is in .gitignore",
+        "Application still works with new keys"
+      ],
+      "notes": "Requires manual Supabase dashboard access to rotate credentials"
+    },
+    {
+      "id": "1.8",
+      "phase": 1,
+      "title": "Write unit tests for SkillRegistry",
+      "description": "Add tests in src/test/skillRegistry.test.ts covering: (1) register() adds a skill to the registry; (2) setEnabled(slug, false) excludes skill from getAllToolDefinitions(); (3) executeTool() routes to the correct skill's executeTool method; (4) executeTool() returns an error result when no skill handles the tool name; (5) fireHook() calls the hook on all enabled skills that declare it; (6) getSkillsForDiscipline() filters correctly by discipline.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "1.2"
+      ],
+      "acceptance_criteria": [
+        "src/test/skillRegistry.test.ts exists with at least 6 test cases",
+        "All tests pass with vitest run",
+        "Test coverage for SkillRegistry is >80%"
+      ]
+    },
+    {
+      "id": "1.9",
+      "phase": 1,
+      "title": "Write integration test for DesignerAgent with mock skill",
+      "description": "Add src/test/designerAgent.integration.test.ts. Create a MockRenderSkill that implements SkillPlugin and returns a fake render result. Register it in a SkillRegistry. Instantiate DesignerAgent with the registry and a test brief. Call runFullOrchestration() and assert that: (1) MockRenderSkill.executeTool was called with the correct tool name; (2) The result contains the mock render; (3) onBriefAnalyzed hook was fired; (4) onSessionComplete hook was fired.",
+      "status": "done",
+      "priority": "medium",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "1.3",
+        "1.8"
+      ],
+      "acceptance_criteria": [
+        "Integration test file exists and all assertions pass",
+        "Test uses a real SkillRegistry with a mock skill (no network calls)",
+        "Hook firing is verified"
+      ]
+    },
+    {
+      "id": "1.10",
+      "phase": 1,
+      "title": "Add AGENTS.md and SOUL.md workspace config files",
+      "description": "Create two OpenClaw-style workspace config files in the repo root: (1) AGENTS.md — defines the core agent's purpose, constraints, and non-negotiable rules (e.g. 'Always ask planning questions on first message', 'Never generate renders without a brief', 'Always cite product sources'). (2) SOUL.md — defines the agent's personality and tone (professional, precise, design-literate, uses correct architectural terminology). These files are read by the DesignerAgent on initialization and prepended to the system prompt.",
+      "status": "done",
+      "priority": "medium",
+      "estimated_effort": "0.5 day",
+      "dependencies": [],
+      "acceptance_criteria": [
+        "AGENTS.md exists in repo root with agent constraints",
+        "SOUL.md exists in repo root with personality/tone guidance",
+        "DesignerAgent reads both files and includes them in the analyze-brief system prompt",
+        "Files are included in open-source documentation"
+      ]
+    },
+    {
+      "id": "2.1",
+      "phase": 2,
+      "title": "Define skill.json manifest JSON Schema",
+      "description": "Create src/lib/skills/manifest-schema.json as a JSON Schema document that validates skill.json manifest files. Include all required fields: slug (pattern: ^[a-z0-9-]+$), name, version (semver), description, disciplines (array of Discipline enum values), requiredSecrets (string array), requiredTables (string array), edgeFunctions (string array), uiComponents (string array), optional (boolean), defaultEnabled (boolean), agentTools (array of AgentToolDefinition objects with name, description, parameters). Also create a TypeScript type guard validateManifest(obj) that validates against this schema.",
+      "status": "done",
+      "priority": "critical",
+      "estimated_effort": "0.5 day",
+      "dependencies": [
+        "1.1"
+      ],
+      "acceptance_criteria": [
+        "src/lib/skills/manifest-schema.json exists and is valid JSON Schema",
+        "validateManifest() type guard exists and correctly rejects invalid manifests",
+        "All existing skill.json files (once created) pass validation"
+      ]
+    },
+    {
+      "id": "2.2",
+      "phase": 2,
+      "title": "Build skill auto-discovery loader",
+      "description": "Implement the loadAll() method in SkillRegistry to auto-discover skills. In a browser/Vite environment, use import.meta.glob('../../skills/*/skill.json') to discover all skill manifests. For each manifest: (1) validate it with validateManifest(); (2) dynamically import the skill's main TypeScript class (e.g. import('../../skills/render-gen/RenderGenSkill')); (3) instantiate the class; (4) call skill.onLoad(context) if the skill is in enabledSlugs; (5) register it. Log warnings for invalid manifests but do not throw.",
+      "status": "done",
+      "priority": "critical",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "2.1",
+        "1.2"
+      ],
+      "acceptance_criteria": [
+        "loadAll() discovers all skills in src/skills/*/skill.json",
+        "Invalid manifests are skipped with a console.warn",
+        "Skills not in enabledSlugs are registered but not loaded (onLoad not called)",
+        "Dynamic import works in Vite dev and production build"
+      ]
+    },
+    {
+      "id": "2.3",
+      "phase": 2,
+      "title": "Build Skill Manager UI component",
+      "description": "Create src/components/workspace/SkillManager.tsx. This component renders a panel listing all available skills (from registry.getAllSkills()). For each skill, show: name, description, version, discipline badges, enabled/disabled toggle, and a gear icon for config. The toggle calls toggleSkill(slug, !enabled) from useSkillRegistry. Add a 'Skills' tab to the ProjectWorkspace sidebar. Skills that are not compatible with the current project's discipline should be shown as grayed out and non-toggleable.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "1.5 days",
+      "dependencies": [
+        "2.2",
+        "1.6"
+      ],
+      "acceptance_criteria": [
+        "SkillManager component renders all available skills",
+        "Toggle correctly enables/disables skills and persists to DB",
+        "Incompatible-discipline skills are grayed out",
+        "Skills tab appears in ProjectWorkspace sidebar",
+        "Component is responsive and matches existing design system"
+      ]
+    },
+    {
+      "id": "2.4",
+      "phase": 2,
+      "title": "Implement per-skill config storage",
+      "description": "Extend the SkillManager UI to show a config panel for skills that declare configSchema in their manifest. The config panel renders form fields based on the schema (text inputs, selects, toggles). On save, the config is stored in project_skills.config JSONB column. The SkillContext passed to skills should include the skill's config object so skills can read their configuration at runtime.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "0.5 day",
+      "dependencies": [
+        "2.3",
+        "1.5"
+      ],
+      "acceptance_criteria": [
+        "Skills can declare configSchema in skill.json",
+        "SkillManager renders config form for skills with configSchema",
+        "Config is saved to project_skills.config",
+        "SkillContext.config contains the skill's current config values"
+      ]
+    },
+    {
+      "id": "2.5",
+      "phase": 2,
+      "title": "Implement skill lifecycle (onLoad/onUnload)",
+      "description": "Ensure that when a skill is enabled via toggleSkill(), registry.setEnabled(slug, true) calls skill.onLoad(context) on the skill instance. When disabled, registry.setEnabled(slug, false) calls skill.onUnload(). In useSkillRegistry, add a cleanup effect that calls registry.unloadAll() when the component unmounts (project workspace closes). This ensures skills can properly initialize/cleanup resources (e.g. WebSocket connections, Three.js contexts).",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "0.5 day",
+      "dependencies": [
+        "2.2"
+      ],
+      "acceptance_criteria": [
+        "onLoad is called when skill is enabled",
+        "onUnload is called when skill is disabled",
+        "unloadAll is called on workspace unmount",
+        "Skills that throw in onLoad are disabled and logged, not crashing the app"
+      ]
+    },
+    {
+      "id": "2.6",
+      "phase": 2,
+      "title": "Implement cross-skill event bus (SkillEventBus)",
+      "description": "Create src/lib/skills/event-bus.ts implementing a SkillEventBus class. It should support: emit(event: SkillEvent) to broadcast an event to all registered listeners; on(eventType: string, handler: (event: SkillEvent) => void) to register a listener; off(eventType, handler) to remove a listener. The SkillRegistry should instantiate one SkillEventBus and pass it to all skills via SkillContext.emitEvent. Skills subscribe to events in their onLoad() method. Define the standard event types: FLOOR_PLAN_UPDATED, RENDER_GENERATED, PRODUCTS_FOUND, FURNITURE_PLACED, SESSION_COMPLETE.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "2.2"
+      ],
+      "acceptance_criteria": [
+        "src/lib/skills/event-bus.ts exists and exports SkillEventBus",
+        "emit, on, off methods work correctly",
+        "Standard event types are defined as constants",
+        "SkillContext.emitEvent calls the bus",
+        "Skills can subscribe to events from other skills in onLoad()"
+      ]
+    },
+    {
+      "id": "2.7",
+      "phase": 2,
+      "title": "Inject skill tool definitions into LLM system prompt",
+      "description": "Update the DesignerAgent to pass all enabled skill tool definitions to the analyze-brief and generate-questions edge functions as part of the system prompt. Format them as OpenAI-compatible function definitions (name, description, parameters as JSON Schema). The LLM should be instructed to return a structured execution plan using these tools. This is the key integration that makes the agent skill-aware at the LLM reasoning level.",
+      "status": "done",
+      "priority": "critical",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "1.4",
+        "2.2"
+      ],
+      "acceptance_criteria": [
+        "Tool definitions from all enabled skills are included in the LLM system prompt",
+        "LLM returns a structured execution plan with tool names matching skill tool definitions",
+        "Agent executes the plan via registry.executeTool",
+        "Integration test demonstrates correct tool selection for a test brief"
+      ]
+    },
+    {
+      "id": "2.8",
+      "phase": 2,
+      "title": "Add discipline-based skill allowlist",
+      "description": "Extend SkillRegistry.loadAll() to filter skills by discipline. When loading skills for a project with projectType='landscape', only load skills whose manifest.disciplines includes 'landscape'. Skills that don't match the discipline should be registered but not loaded (onLoad not called) and shown as grayed out in SkillManager. This ensures landscape projects don't see IFC export (architectural-only) and architectural projects don't see planting zone tools.",
+      "status": "done",
+      "priority": "medium",
+      "estimated_effort": "0.5 day",
+      "dependencies": [
+        "2.2"
+      ],
+      "acceptance_criteria": [
+        "Skills with mismatched disciplines are not loaded",
+        "SkillManager shows mismatched skills as grayed out with discipline badge",
+        "Discipline filtering works for all four disciplines"
+      ]
+    },
+    {
+      "id": "2.9",
+      "phase": 2,
+      "title": "Add skill hot-reload in development",
+      "description": "In development mode (import.meta.env.DEV), use Vite's HMR API to watch for changes to src/skills/*/skill.json files. When a manifest changes, re-validate it and reload the skill (call onUnload then onLoad). This allows skill developers to iterate without restarting the dev server. Add a toast notification when a skill is hot-reloaded.",
+      "status": "done",
+      "priority": "low",
+      "estimated_effort": "0.5 day",
+      "dependencies": [
+        "2.2"
+      ],
+      "acceptance_criteria": [
+        "Changing a skill.json in development triggers a hot reload",
+        "Toast notification appears on hot reload",
+        "Only works in development mode (no-op in production)"
+      ]
+    },
+    {
+      "id": "2.10",
+      "phase": 2,
+      "title": "Write tests for skill discovery, lifecycle, event bus, and UI toggle",
+      "description": "Add tests covering: (1) loadAll() discovers mock skills from a test directory; (2) onLoad is called for enabled skills, not for disabled; (3) onUnload is called on setEnabled(false); (4) SkillEventBus emit/on/off work correctly; (5) SkillManager toggle calls toggleSkill and updates DB; (6) Discipline filtering excludes wrong-discipline skills.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "2.1",
+        "2.2",
+        "2.3",
+        "2.5",
+        "2.6"
+      ],
+      "acceptance_criteria": [
+        "All 6 test scenarios have passing tests",
+        "Tests use mock Supabase client (no real DB calls)",
+        "vitest run passes with zero failures"
+      ]
+    },
+    {
+      "id": "3.1",
+      "phase": 3,
+      "title": "Extract render generation into render-gen skill",
+      "description": "Create the src/skills/render-gen/ directory with: (1) skill.json manifest declaring the generate_render agent tool with style, view_type, floor_plan_url parameters; (2) RenderGenSkill.ts implementing SkillPlugin — executeTool('generate_render', params) calls the generate-render Supabase edge function and returns the result; (3) Add a renders DB table migration to src/skills/render-gen/supabase/migrations/001_renders_table.sql; (4) Move render display logic from AssetGallery into src/skills/render-gen/components/RenderGallery.tsx; (5) Write README.md. Remove the direct generate-render call from DesignerAgent.",
+      "status": "done",
+      "priority": "critical",
+      "estimated_effort": "2.75 days",
+      "dependencies": [
+        "2.2",
+        "1.3"
+      ],
+      "acceptance_criteria": [
+        "src/skills/render-gen/ directory exists with all required files",
+        "Render generation works end-to-end via skill system",
+        "Renders are persisted to the renders table",
+        "DesignerAgent no longer directly calls generate-render edge function",
+        "README.md explains how to configure and use the skill"
+      ]
+    },
+    {
+      "id": "3.2",
+      "phase": 3,
+      "title": "Extract 3D floor plan editor into floor-plan-3d skill and wire render pipeline",
+      "description": "This is the most critical task. Create src/skills/floor-plan-3d/ with: (1) skill.json declaring tools: export_floor_plan_view, size_furniture, get_room_data; (2) FloorPlanSkill.ts implementing SkillPlugin; (3) Migration for floor_plan_data JSONB column on projects table; (4) In RoomEditor3D, add a 'Finalize Plan' button that: renders top-down orthographic screenshot via gl.domElement.toDataURL(), uploads PNG to Supabase Storage at project-assets/{userId}/{projectId}/floor-plan-top.png, persists wall/furniture JSON to floor_plan_data column, emits FLOOR_PLAN_UPDATED event with floorPlanUrl and roomData; (5) In render-gen skill, register onFloorPlanUpdated hook that stores floorPlanUrl in session context; (6) Update generate-render edge function to receive floor_plan_url and pass it as multimodal inlineData to Gemini; (7) Add spatial constraint text to render prompt (room dimensions, furniture positions, ceiling height); (8) Add size_furniture tool that updates Three.js scene and re-exports; (9) Add room label overlay (names + m² areas) to export image; (10) Persist furniture placements to floor_plan_data.furniture array; (11) Write README.md with pipeline diagram.",
+      "status": "done",
+      "priority": "critical",
+      "estimated_effort": "9.75 days",
+      "dependencies": [
+        "2.6",
+        "3.1"
+      ],
+      "acceptance_criteria": [
+        "src/skills/floor-plan-3d/ exists with all required files",
+        "Finalize Plan button exports top-down PNG and uploads to Storage",
+        "floor_plan_data is persisted to DB",
+        "FLOOR_PLAN_UPDATED event is emitted and received by render-gen skill",
+        "generate-render edge function uses floor plan image as Gemini inlineData",
+        "Generated renders reflect the actual room geometry from the floor plan",
+        "size_furniture tool updates scene and triggers re-export",
+        "Room labels appear in exported floor plan image",
+        "Furniture placements persist across page reloads"
+      ]
+    },
+    {
+      "id": "3.3",
+      "phase": 3,
+      "title": "Extract product sourcing into product-sourcing skill",
+      "description": "Create src/skills/product-sourcing/ with: (1) skill.json declaring the search_products agent tool; (2) ProductSourcingSkill.ts wrapping the search-products Supabase RPC; (3) Move ProductPanel UI into src/skills/product-sourcing/components/; (4) Replace the mock product catalog with real data — integrate IKEA's unofficial API or use affiliate links from Wayfair/CB2/West Elm product feeds; (5) Write README.md. Remove direct mock-sourcing call from DesignerAgent.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "3.75 days",
+      "dependencies": [
+        "2.2",
+        "1.3"
+      ],
+      "acceptance_criteria": [
+        "src/skills/product-sourcing/ exists with all required files",
+        "Product search works via skill system",
+        "At least one real product data source is integrated (not mock data)",
+        "DesignerAgent no longer directly calls mock-sourcing",
+        "README.md explains data sources and how to add new ones"
+      ]
+    },
+    {
+      "id": "3.4",
+      "phase": 3,
+      "title": "Extract IFC export into ifc-export skill",
+      "description": "Create src/skills/ifc-export/ with: (1) skill.json declaring the export_ifc agent tool (disciplines: architectural, interior); (2) IfcExportSkill.ts wrapping src/lib/ifcUtils.ts; (3) Add export_ifc to the agent tool definitions so the LLM can trigger IFC export when the user asks for it; (4) Write README.md explaining IFC 2x3 format and BIM tool compatibility.",
+      "status": "done",
+      "priority": "medium",
+      "estimated_effort": "1.5 days",
+      "dependencies": [
+        "2.2",
+        "1.3"
+      ],
+      "acceptance_criteria": [
+        "src/skills/ifc-export/ exists with all required files",
+        "LLM can trigger IFC export via export_ifc tool call",
+        "IFC file downloads correctly when tool is invoked",
+        "Skill is only available for architectural and interior disciplines"
+      ]
+    },
+    {
+      "id": "3.5",
+      "phase": 3,
+      "title": "Extract auto-generate cron into auto-generate skill and fix security",
+      "description": "Create src/skills/auto-generate/ with: (1) skill.json declaring the schedule_auto_generate agent tool; (2) AutoGenerateSkill.ts wrapping the agent-cron edge function; (3) Add CRON_SECRET environment variable check to agent-cron/index.ts — the function should verify a shared secret in the Authorization header before processing (currently it has no auth); (4) Write README.md.",
+      "status": "done",
+      "priority": "medium",
+      "estimated_effort": "1.25 days",
+      "dependencies": [
+        "2.2",
+        "1.3"
+      ],
+      "acceptance_criteria": [
+        "src/skills/auto-generate/ exists with all required files",
+        "agent-cron edge function verifies CRON_SECRET before processing",
+        "Auto-generate works via skill system",
+        "README.md explains cron configuration"
+      ]
+    },
+    {
+      "id": "3.6",
+      "phase": 3,
+      "title": "Build landscape-site skill (new feature)",
+      "description": "Create src/skills/landscape-site/ as a new skill (disciplines: landscape only) with: (1) skill.json declaring tools: draw_site_boundary, add_planting_zone, generate_site_plan_render; (2) LandscapeSiteSkill.ts; (3) SVG-based site boundary polygon editor component (click to add vertices, drag to move, close polygon); (4) Planting zone overlay with color-coded zones (lawn, shrubs, trees, hardscape, water features); (5) Export site plan as PNG for render conditioning; (6) generate_site_plan_render tool that passes the site plan PNG to generate-render; (7) Write README.md.",
+      "status": "done",
+      "priority": "medium",
+      "estimated_effort": "6 days",
+      "dependencies": [
+        "2.6",
+        "3.1"
+      ],
+      "acceptance_criteria": [
+        "src/skills/landscape-site/ exists with all required files",
+        "Site boundary polygon editor works (click to add vertices, close polygon)",
+        "Planting zones can be added with color coding",
+        "Site plan exports as PNG",
+        "generate_site_plan_render tool generates a render conditioned on the site plan",
+        "Skill only appears for landscape discipline projects"
+      ]
+    },
+    {
+      "id": "4.1",
+      "phase": 4,
+      "title": "Extract core agent into @clawd/agent-core npm package",
+      "description": "Create a packages/agent-core/ directory with its own package.json (name: @clawd/agent-core). Move src/lib/designerAgent.ts, src/lib/skills/types.ts, src/lib/skills/registry.ts, src/lib/skills/event-bus.ts, src/hooks/useDesignerAgent.ts, src/hooks/useSkillRegistry.ts into the package. Configure tsconfig for package export. Set up the monorepo with pnpm workspaces. The package should have zero Supabase-specific dependencies — accept a generic storage/DB adapter interface instead.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "2 days",
+      "dependencies": [
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4",
+        "3.5"
+      ],
+      "acceptance_criteria": [
+        "packages/agent-core/ exists as a standalone npm package",
+        "pnpm workspaces monorepo is configured",
+        "Core package has no Supabase-specific imports",
+        "clawd-studio-gallery app imports from @clawd/agent-core",
+        "TypeScript builds successfully for the package"
+      ]
+    },
+    {
+      "id": "4.2",
+      "phase": 4,
+      "title": "Write core package README.md",
+      "description": "Write a comprehensive README.md for packages/agent-core/ covering: what it is (a modular AI designer agent for architectural, interior, and landscape design); quick start (install, initialize DesignerAgent, add a skill); architecture overview with a diagram; how to write a skill (link to SKILL_AUTHORING.md); configuration (AGENTS.md, SOUL.md); API reference for DesignerAgent, SkillRegistry, SkillPlugin interface; examples; license (MIT).",
+      "status": "done",
+      "priority": "critical",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "4.1"
+      ],
+      "acceptance_criteria": [
+        "README.md exists in packages/agent-core/",
+        "Quick start section works as written (tested)",
+        "Architecture diagram is included",
+        "All public API methods are documented",
+        "License is MIT"
+      ]
+    },
+    {
+      "id": "4.3",
+      "phase": 4,
+      "title": "Write CONTRIBUTING.md",
+      "description": "Write CONTRIBUTING.md in the repo root covering: how to set up the development environment; how to run tests; PR process and review criteria; code style (ESLint + Prettier config); how to write and submit a new skill; how to report security vulnerabilities (link to SECURITY.md); code of conduct.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "0.5 day",
+      "dependencies": [
+        "4.1"
+      ],
+      "acceptance_criteria": [
+        "CONTRIBUTING.md exists in repo root",
+        "Development setup instructions work as written",
+        "Skill submission process is clearly explained"
+      ]
+    },
+    {
+      "id": "4.4",
+      "phase": 4,
+      "title": "Write SKILL_AUTHORING.md",
+      "description": "Write a step-by-step skill authoring guide covering: the skill directory structure; skill.json manifest fields (with all options explained); implementing the SkillPlugin interface (onLoad, executeTool, onUnload); defining agent tools (JSON Schema parameters); registering lifecycle hooks; using the event bus; adding a Supabase edge function; adding a React UI component; writing tests for your skill; submitting to the public skill registry.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "4.1"
+      ],
+      "acceptance_criteria": [
+        "SKILL_AUTHORING.md exists in repo root",
+        "A developer with no prior Clawd Studio knowledge can follow it to create a working skill",
+        "All code examples are syntactically correct and tested"
+      ]
+    },
+    {
+      "id": "4.5",
+      "phase": 4,
+      "title": "Create hello-world-skill example",
+      "description": "Create src/skills/hello-world/ as a minimal example skill that demonstrates the full SkillPlugin interface with the least possible code. It should: declare one agent tool (say_hello) that returns a greeting; implement onLoad (logs 'Hello World skill loaded'); implement executeTool; implement onUnload; have a skill.json manifest; have a README.md. This is the reference implementation for skill authors.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "0.5 day",
+      "dependencies": [
+        "4.1"
+      ],
+      "acceptance_criteria": [
+        "src/skills/hello-world/ exists with skill.json, HelloWorldSkill.ts, README.md",
+        "say_hello tool works when invoked by the agent",
+        "Code is minimal and well-commented",
+        "README.md references SKILL_AUTHORING.md"
+      ]
+    },
+    {
+      "id": "4.6",
+      "phase": 4,
+      "title": "Set up GitHub Actions CI",
+      "description": "Create .github/workflows/ci.yml with a CI pipeline that runs on every PR and push to main: (1) Install dependencies with pnpm install --frozen-lockfile; (2) Run TypeScript type check with tsc --noEmit; (3) Run ESLint; (4) Run vitest run for all tests; (5) Build the project with vite build. Add a status badge to the main README.md.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "0.5 day",
+      "dependencies": [],
+      "acceptance_criteria": [
+        ".github/workflows/ci.yml exists and runs on PR",
+        "All four CI steps pass on the main branch",
+        "CI badge appears in README.md",
+        "PRs with failing tests cannot be merged"
+      ]
+    },
+    {
+      "id": "4.7",
+      "phase": 4,
+      "title": "Set up public skill registry (GitHub repo)",
+      "description": "Create a new GitHub repository at clawd-studio/skills (or similar). Structure it as a registry with: a registry.json index file listing all published skills (slug, name, version, description, disciplines, author, repo URL, install URL); a skills/ directory with one subdirectory per skill containing the skill.json manifest and README.md; a SUBMIT.md guide for skill authors; GitHub Actions to validate submitted skill.json files against the manifest schema.",
+      "status": "done",
+      "priority": "medium",
+      "estimated_effort": "1 day",
+      "dependencies": [
+        "4.3"
+      ],
+      "acceptance_criteria": [
+        "Public GitHub repo exists with registry.json",
+        "At least the 5 built-in skills are listed in the registry",
+        "GitHub Actions validates skill.json on PR",
+        "SUBMIT.md explains how to submit a skill"
+      ]
+    },
+    {
+      "id": "4.8",
+      "phase": 4,
+      "title": "Build clawd-skill CLI for skill installation",
+      "description": "Create a packages/clawd-skill-cli/ npm package with a bin entry. The CLI should support: npx clawd-skill install <slug> — fetches the skill from the registry, downloads the skill directory into src/skills/<slug>/, and runs any required DB migrations; npx clawd-skill list — lists all available skills from the registry; npx clawd-skill search <query> — searches skills by name/description/discipline. Use the registry.json from the public GitHub repo as the data source.",
+      "status": "done",
+      "priority": "medium",
+      "estimated_effort": "2 days",
+      "dependencies": [
+        "4.7"
+      ],
+      "acceptance_criteria": [
+        "npx clawd-skill install render-gen works and adds the skill to src/skills/",
+        "npx clawd-skill list shows all registry skills",
+        "npx clawd-skill search interior returns relevant skills",
+        "CLI is published to npm as @clawd/skill-cli"
+      ]
+    },
+    {
+      "id": "4.9",
+      "phase": 4,
+      "title": "Security audit of all skills",
+      "description": "Conduct a security review of all skills covering: (1) Prompt injection — validate all user-provided strings before including in LLM prompts (strip markdown, limit length, sanitize special characters); (2) Tool parameter validation — add Zod schemas to validate all tool parameters in executeTool before processing; (3) Rate limiting — add per-user rate limiting to all edge functions (max 10 render calls per hour per user); (4) Storage path validation — ensure storage paths are user-scoped and cannot traverse to other users' files; (5) Skill manifest validation — ensure skill manifests cannot declare tools with names that clash with core tools.",
+      "status": "done",
+      "priority": "critical",
+      "estimated_effort": "2 days",
+      "dependencies": [
+        "3.1",
+        "3.2",
+        "3.3",
+        "3.4",
+        "3.5"
+      ],
+      "acceptance_criteria": [
+        "All tool parameters are validated with Zod schemas",
+        "Rate limiting is active on generate-render (10/hour/user)",
+        "Storage paths are validated to be user-scoped",
+        "Prompt injection test cases pass",
+        "No tool name clashes between skills and core"
+      ]
+    },
+    {
+      "id": "4.10",
+      "phase": 4,
+      "title": "Write SECURITY.md and responsible disclosure policy",
+      "description": "Write SECURITY.md covering: supported versions; how to report a vulnerability (private GitHub security advisory or security@clawd.studio email); response timeline (acknowledge within 48h, patch within 14 days for critical); known security considerations for skill authors (prompt injection risks, tool permission scoping, secret handling); reference to OpenClaw CVE-2026-25253 as a cautionary example of AI gateway vulnerabilities.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "0.5 day",
+      "dependencies": [
+        "4.9"
+      ],
+      "acceptance_criteria": [
+        "SECURITY.md exists in repo root",
+        "Responsible disclosure process is clearly defined",
+        "Skill author security guidelines are included"
+      ]
+    },
+    {
+      "id": "4.11",
+      "phase": 4,
+      "title": "Tag v1.0.0 release",
+      "description": "Prepare and tag the v1.0.0 release: (1) Update CHANGELOG.md with all changes since initial commit; (2) Bump version in packages/agent-core/package.json to 1.0.0; (3) Run full CI to confirm all tests pass; (4) Create a GitHub release with release notes summarizing the skill plugin architecture, list of built-in skills, and getting started instructions; (5) Publish @clawd/agent-core to npm; (6) Announce on relevant communities.",
+      "status": "done",
+      "priority": "high",
+      "estimated_effort": "0.5 day",
+      "dependencies": [
+        "4.1",
+        "4.2",
+        "4.3",
+        "4.4",
+        "4.5",
+        "4.6",
+        "4.7",
+        "4.9",
+        "4.10"
+      ],
+      "acceptance_criteria": [
+        "v1.0.0 git tag exists",
+        "GitHub release exists with release notes",
+        "@clawd/agent-core is published to npm",
+        "CHANGELOG.md is complete",
+        "All CI checks pass on the tagged commit"
+      ]
+    }
+  ]
+}

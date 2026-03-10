@@ -1,0 +1,13 @@
+{
+  "version": "1.0.0",
+  "description": "Clawd Studio public skill registry",
+  "skills": [
+    { "slug": "render-gen", "name": "Render Generation", "version": "1.0.0", "description": "AI-powered design render generation using Gemini with ControlNet fallback", "disciplines": ["interior", "architectural", "landscape", "industrial"], "author": "Clawd Studio" },
+    { "slug": "product-sourcing", "name": "Product Sourcing", "version": "1.0.0", "description": "AI-curated product recommendations from design catalogs", "disciplines": ["interior", "architectural", "landscape"], "author": "Clawd Studio" },
+    { "slug": "floor-plan-3d", "name": "3D Floor Plan Editor", "version": "1.0.0", "description": "Interactive 2D/3D floor plan editor with wall drawing, openings, and GLB export", "disciplines": ["interior", "architectural"], "author": "Clawd Studio" },
+    { "slug": "ifc-export", "name": "IFC Export", "version": "1.0.0", "description": "Export floor plans to IFC 2x3 format for BIM tool compatibility", "disciplines": ["architectural", "interior"], "author": "Clawd Studio" },
+    { "slug": "auto-generate", "name": "Auto Generate", "version": "1.0.0", "description": "Schedule automatic render regeneration via cron jobs", "disciplines": ["interior", "architectural", "landscape", "industrial"], "author": "Clawd Studio" },
+    { "slug": "landscape-site", "name": "Landscape Site Planner", "version": "1.0.0", "description": "SVG-based site boundary and planting zone editor for landscape design", "disciplines": ["landscape"], "author": "Clawd Studio" },
+    { "slug": "hello-world", "name": "Hello World", "version": "1.0.0", "description": "Minimal example skill demonstrating the SkillPlugin interface", "disciplines": ["interior", "architectural", "landscape", "industrial"], "author": "Clawd Studio" }
+  ]
+}

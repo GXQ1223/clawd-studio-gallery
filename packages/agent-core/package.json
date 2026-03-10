@@ -1,0 +1,21 @@
+{
+  "name": "@clawd/agent-core",
+  "version": "1.0.0",
+  "description": "Modular AI designer agent with skill plugin architecture",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "keywords": ["ai", "design", "agent", "architecture", "interior-design", "skill-system"],
+  "license": "MIT",
+  "peerDependencies": {
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0"
+  }
+}
