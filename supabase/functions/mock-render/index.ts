@@ -310,7 +310,7 @@ async function generateWithDallE(
 
 /** Download image from URL and upload to Supabase Storage */
 async function uploadToStorage(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   imageUrl: string,
   projectId: string,
   index: number
