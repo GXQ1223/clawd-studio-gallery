@@ -208,7 +208,36 @@ serve(async (req) => {
     }
 
     const { style, description, project_id, project_type } = await req.json();
-    const styleLabel = style || "contemporary";
+
+    // Input validation
+    const errors: string[] = [];
+    if (!project_id || typeof project_id !== "string") {
+      errors.push("project_id is required and must be a non-empty string");
+    }
+    if (description && typeof description === "string" && description.length > 2000) {
+      errors.push("description must be under 2,000 characters");
+    }
+    const VALID_STYLES = [
+      "contemporary", "modern", "minimalist", "scandinavian", "industrial",
+      "mid-century", "japandi", "bohemian", "traditional", "art deco",
+      "farmhouse", "coastal", "rustic", "tropical", "mediterranean",
+    ];
+    if (style && typeof style === "string" && !VALID_STYLES.includes(style.toLowerCase())) {
+      errors.push(`style must be one of: ${VALID_STYLES.join(", ")}`);
+    }
+    if (errors.length > 0) {
+      return new Response(
+        JSON.stringify({ success: false, error: errors.join("; ") }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // Sanitize description: strip control characters and limit to safe text
+    const sanitizedDescription = description
+      ? String(description).replace(/[\x00-\x1f\x7f]/g, "").slice(0, 2000)
+      : undefined;
+
+    const styleLabel = style ? style.toLowerCase() : "contemporary";
     const discipline = getDiscipline(project_type);
     const startTime = Date.now();
 
@@ -227,7 +256,7 @@ serve(async (req) => {
       try {
         const prompt = buildDesignPrompt(
           styleLabel,
-          description || disciplineConfig.defaultDescription,
+          sanitizedDescription || disciplineConfig.defaultDescription,
           i,
           project_type,
         );

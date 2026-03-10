@@ -31,7 +31,7 @@
   - Correct: aspectRatio directly within generationConfig per Gemini API docs
   - Fix hardcoded resolution metadata ("1408x768") to reflect actual API response dimensions
 
-- [ ] 5. Add input validation on generate-render function
+- [x] 5. Add input validation on generate-render function
   - Validate project_id is a non-empty string
   - Validate description is under 2,000 characters
   - Validate style is one of the known values
