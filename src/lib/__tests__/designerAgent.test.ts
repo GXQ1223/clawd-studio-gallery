@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from "vitest";
 // Chainable query builder mock that supports arbitrary .method() chains
 const qb = (result: { data: unknown; error: unknown }) => {
   const chain: any = {};
-  const methods = ["select", "eq", "not", "order", "single", "insert", "update", "delete", "filter"];
+  const methods = ["select", "eq", "not", "order", "single", "insert", "update", "delete", "filter", "limit"];
   for (const m of methods) {
     chain[m] = (..._args: unknown[]) => chain;
   }

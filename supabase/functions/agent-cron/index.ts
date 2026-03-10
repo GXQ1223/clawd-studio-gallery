@@ -74,12 +74,13 @@ Deno.serve(async (req) => {
     const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
     const supabase = createClient(supabaseUrl, serviceKey);
 
-    // Fetch all sessions with cron enabled
+    // Fetch cron-enabled sessions (capped at 50 to prevent runaway processing)
     const { data: sessions, error } = await supabase
       .from("agent_sessions")
       .select("*")
       .eq("cron_enabled", true)
-      .not("cron_interval", "is", null);
+      .not("cron_interval", "is", null)
+      .limit(50);
 
     if (error) throw error;
     if (!sessions || sessions.length === 0) {

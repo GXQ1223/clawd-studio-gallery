@@ -350,7 +350,8 @@ export class DesignerAgent {
       .from("agent_sessions")
       .select("*")
       .eq("project_id", projectId)
-      .order("priority", { ascending: true });
+      .order("priority", { ascending: true })
+      .limit(50);
     return (data || []) as unknown as AgentSession[];
   }
 
@@ -359,7 +360,8 @@ export class DesignerAgent {
       .from("agent_messages")
       .select("*")
       .eq("project_id", projectId)
-      .order("created_at", { ascending: true });
+      .order("created_at", { ascending: true })
+      .limit(500);
     return (data || []) as unknown as AgentMessage[];
   }
 
@@ -370,7 +372,8 @@ export class DesignerAgent {
       .select("*")
       .eq("project_id", projectId)
       .eq("status", "completed")
-      .not("result_data", "is", null);
+      .not("result_data", "is", null)
+      .limit(50);
 
     if (!sessions || sessions.length === 0) return null;
 

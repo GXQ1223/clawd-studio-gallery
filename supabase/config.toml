@@ -1,19 +1,22 @@
 project_id = "cahvyvmwqtbvyauorokn"
 
 [functions.mock-render]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate-render]
-verify_jwt = false
+verify_jwt = true
 
 [functions.mock-sourcing]
-verify_jwt = false
+verify_jwt = true
 
 [functions.analyze-brief]
-verify_jwt = false
+verify_jwt = true
 
 [functions.generate-questions]
-verify_jwt = false
+verify_jwt = true
+
+[functions.generate-3d-model]
+verify_jwt = true
 
 [functions.agent-cron]
 verify_jwt = false

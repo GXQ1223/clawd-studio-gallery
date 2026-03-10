@@ -34,7 +34,7 @@ export function useProjects(filter?: string) {
   return useQuery({
     queryKey: ["projects", filter],
     queryFn: async () => {
-      let query = supabase.from("projects").select("*").order("created_at", { ascending: false });
+      let query = supabase.from("projects").select("*").order("created_at", { ascending: false }).limit(100);
       if (filter && filter !== "all") {
         query = query.eq("status", filter);
       }
