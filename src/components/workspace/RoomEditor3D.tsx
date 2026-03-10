@@ -49,7 +49,8 @@ function buildMeshes(
   paths: PathData[],
   gridScale: string,
   wallHeight: number,
-  wallThickness: number
+  wallThickness: number,
+  openings: Opening[] = []
 ): MeshEntry[] {
   const gridPx = GRID_PX[gridScale] || 24;
   const gridMeters = GRID_METERS[gridScale] || 0.3048;
@@ -72,24 +73,126 @@ function buildMeshes(
       const len = Math.sqrt(dx * dx + dz * dz);
       if (len < 0.001) continue;
 
-      // Wall as a box: length along the segment, height up, thickness perpendicular
-      const geo = new THREE.BoxGeometry(len, wallHeight, wallThickness);
-
-      // Position at midpoint, rotate to align with segment direction
       const mx = (x1 + x2) / 2;
       const mz = (z1 + z2) / 2;
       const angle = Math.atan2(dz, dx);
+      wallIdx++;
 
-      // We'll apply rotation in the mesh component
-      geo.userData = { angle };
+      // Find openings on this wall segment
+      const segOpenings = openings.filter(
+        (o) => o.wallPathIndex === pi && o.segmentIndex === i
+      );
 
-      meshes.push({
-        id: `wall-${pi}-${i}`,
-        type: "wall",
-        geometry: geo,
-        position: [mx, wallHeight / 2, mz],
-        label: `Wall ${++wallIdx}`,
-      });
+      if (segOpenings.length === 0) {
+        // No openings — single box for entire wall
+        const geo = new THREE.BoxGeometry(len, wallHeight, wallThickness);
+        geo.userData = { angle };
+        meshes.push({
+          id: `wall-${pi}-${i}`,
+          type: "wall",
+          geometry: geo,
+          position: [mx, wallHeight / 2, mz],
+          label: `Wall ${wallIdx}`,
+        });
+      } else {
+        // Split wall around openings
+        // Sort openings by position along the wall
+        const sorted = [...segOpenings].sort((a, b) => a.position - b.position);
+
+        // Convert opening positions to local X coords (wall goes from -len/2 to +len/2)
+        const halfLen = len / 2;
+        const pieces: Array<{ localX: number; width: number; yBottom: number; yTop: number; label: string; id: string }> = [];
+
+        // Track filled ranges along X to create left/right pieces
+        let prevRight = -halfLen; // left edge of wall in local coords
+
+        for (let oi = 0; oi < sorted.length; oi++) {
+          const op = sorted[oi];
+          const opCenterX = op.position * len - halfLen; // local X center
+          const opHalfW = op.width / 2;
+          const opLeft = Math.max(-halfLen, opCenterX - opHalfW);
+          const opRight = Math.min(halfLen, opCenterX + opHalfW);
+
+          const sillY = op.type === "window" ? (op.sillHeight ?? 0.9) : 0;
+          const topY = sillY + op.height;
+
+          // Left solid piece (from previous right edge to opening left)
+          if (opLeft - prevRight > 0.01) {
+            const w = opLeft - prevRight;
+            pieces.push({
+              localX: prevRight + w / 2,
+              width: w,
+              yBottom: 0,
+              yTop: wallHeight,
+              label: `Wall ${wallIdx}`,
+              id: `wall-${pi}-${i}-solid-${oi}-L`,
+            });
+          }
+
+          // Sill piece below window (below the opening)
+          if (sillY > 0.01) {
+            pieces.push({
+              localX: opCenterX,
+              width: opRight - opLeft,
+              yBottom: 0,
+              yTop: sillY,
+              label: `Wall ${wallIdx} sill`,
+              id: `wall-${pi}-${i}-sill-${oi}`,
+            });
+          }
+
+          // Lintel piece above opening
+          if (topY < wallHeight - 0.01) {
+            pieces.push({
+              localX: opCenterX,
+              width: opRight - opLeft,
+              yBottom: topY,
+              yTop: wallHeight,
+              label: `Wall ${wallIdx} lintel`,
+              id: `wall-${pi}-${i}-lintel-${oi}`,
+            });
+          }
+
+          prevRight = opRight;
+        }
+
+        // Right solid piece (from last opening right edge to wall end)
+        if (halfLen - prevRight > 0.01) {
+          const w = halfLen - prevRight;
+          pieces.push({
+            localX: prevRight + w / 2,
+            width: w,
+            yBottom: 0,
+            yTop: wallHeight,
+            label: `Wall ${wallIdx}`,
+            id: `wall-${pi}-${i}-solid-R`,
+          });
+        }
+
+        // Create mesh entries for each piece
+        for (const piece of pieces) {
+          const h = piece.yTop - piece.yBottom;
+          if (h < 0.01 || piece.width < 0.01) continue;
+          const geo = new THREE.BoxGeometry(piece.width, h, wallThickness);
+          geo.userData = { angle };
+
+          // Convert local X offset back to world position
+          // localX=0 corresponds to mx,mz (wall midpoint)
+          // local X axis is along (dx/len, dz/len)
+          const ux = dx / len;
+          const uz = dz / len;
+          const worldX = mx + piece.localX * ux;
+          const worldZ = mz + piece.localX * uz;
+
+          meshes.push({
+            id: piece.id,
+            type: "wall",
+            geometry: geo,
+            position: [worldX, piece.yBottom + h / 2, worldZ],
+            label: piece.label,
+          });
+        }
+      }
 
       // Track bounds
       minX = Math.min(minX, x1, x2);
@@ -216,15 +319,13 @@ export default function RoomEditor3D({
   onBack,
   onExportGlb,
 }: Props) {
-  // openings will be used in Task 4 for 3D geometry holes
-  void openings;
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [colorMap, setColorMap] = useState<Record<string, string>>({});
   const [showCeiling, setShowCeiling] = useState(true);
 
   const meshes = useMemo(
-    () => buildMeshes(paths, gridScale, wallHeight, wallThickness),
-    [paths, gridScale, wallHeight, wallThickness]
+    () => buildMeshes(paths, gridScale, wallHeight, wallThickness, openings),
+    [paths, gridScale, wallHeight, wallThickness, openings]
   );
 
   const selectedMesh = meshes.find((m) => m.id === selectedId);
