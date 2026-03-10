@@ -7,12 +7,12 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+const GEMINI_MODEL = "gemini-2.0-flash-exp";
+const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
-const IMAGE_MODEL = "google/gemini-2.5-flash-image";
 
 /** Discipline-specific configuration */
 const DISCIPLINE_CONFIG: Record<string, {
@@ -113,40 +113,41 @@ function buildDesignPrompt(
   ].join(" ");
 }
 
-/** Call Lovable AI Gateway with Gemini image model */
+/** Call Gemini API directly to generate a single image */
 async function generateImage(prompt: string): Promise<string | null> {
-  const response = await fetch(AI_GATEWAY, {
+  const response = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      "Content-Type": "application/json",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: IMAGE_MODEL,
-      messages: [{ role: "user", content: prompt }],
-      modalities: ["image", "text"],
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        responseModalities: ["IMAGE", "TEXT"],
+        imagenConfig: { aspectRatio: "16:9" },
+      },
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`AI Gateway error (${response.status}):`, errorText);
-    throw new Error(`AI Gateway returned ${response.status}: ${errorText.slice(0, 200)}`);
+    console.error(`Gemini API error (${response.status}):`, errorText);
+    throw new Error(`Gemini API returned ${response.status}: ${errorText.slice(0, 200)}`);
   }
 
   const data = await response.json();
-  const images = data?.choices?.[0]?.message?.images;
-  if (!images || images.length === 0) {
-    console.error("No images in AI Gateway response");
+  const parts = data?.candidates?.[0]?.content?.parts;
+  if (!parts || parts.length === 0) {
+    console.error("No parts in Gemini response:", JSON.stringify(data).slice(0, 500));
     return null;
   }
 
-  // Extract base64 data from data:image/png;base64,... URL
-  const dataUrl = images[0]?.image_url?.url;
-  if (!dataUrl) return null;
+  for (const part of parts) {
+    if (part.inlineData?.data) {
+      return part.inlineData.data; // base64 string
+    }
+  }
 
-  const base64Match = dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
-  return base64Match ? base64Match[1] : null;
+  console.error("No image data in response parts");
+  return null;
 }
 
 /** Upload base64 image to Supabase Storage */
@@ -202,8 +203,8 @@ serve(async (req) => {
       );
     }
 
-    if (!LOVABLE_API_KEY) {
-      throw new Error("LOVABLE_API_KEY is not configured.");
+    if (!GEMINI_API_KEY) {
+      throw new Error("GEMINI_API_KEY is not configured. Add it to your backend secrets.");
     }
 
     const { style, description, project_id, project_type } = await req.json();
@@ -221,7 +222,7 @@ serve(async (req) => {
     const variationLabels = ["Direction A", "Direction B", "Direction C"];
     const disciplineConfig = DISCIPLINE_CONFIG[discipline] || DISCIPLINE_CONFIG.interior;
 
-    // Generate 3 variations sequentially to avoid rate limits
+    // Generate 3 variations sequentially (Gemini rate limits)
     for (let i = 0; i < 3; i++) {
       try {
         const prompt = buildDesignPrompt(
@@ -244,7 +245,7 @@ serve(async (req) => {
           url,
           label: `${styleLabel.charAt(0).toUpperCase() + styleLabel.slice(1)} ${variationLabels[i]}`,
           style: styleLabel,
-          resolution: "1024x1024",
+          resolution: "1408x768",
           generated_at: new Date().toISOString(),
         });
       } catch (err) {
@@ -258,7 +259,7 @@ serve(async (req) => {
         project_id,
         renders,
         processing_time_ms: Date.now() - startTime,
-        engine: "gemini-2.5-flash-image (lovable-ai)",
+        engine: "gemini-2.0-flash-exp (direct)",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
