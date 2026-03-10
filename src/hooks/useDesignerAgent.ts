@@ -52,9 +52,14 @@ export function useDesignerAgent(projectId: string, projectType?: string) {
       if (persisted) {
         setResults((prev) => {
           if (!prev) return persisted;
+          // Deduplicate by ID when merging persisted + live results
+          const seenRenderIds = new Set(prev.renders.map((r) => r.id));
+          const newRenders = persisted.renders.filter((r) => !seenRenderIds.has(r.id));
+          const seenProductIds = new Set(prev.products.map((p) => p.id));
+          const newProducts = persisted.products.filter((p) => !seenProductIds.has(p.id));
           return {
-            renders: [...persisted.renders, ...prev.renders],
-            products: [...persisted.products, ...prev.products],
+            renders: [...prev.renders, ...newRenders],
+            products: [...prev.products, ...newProducts],
             shoppingList: prev.shoppingList,
           };
         });

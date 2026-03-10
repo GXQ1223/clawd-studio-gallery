@@ -26,7 +26,12 @@ const ProjectWorkspace = () => {
   const [chatOpen, setChatOpen] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [keptAssets, setKeptAssets] = useState<Asset[]>([]);
-  const [deletedRenderIds, setDeletedRenderIds] = useState<Set<string>>(new Set());
+  const [deletedRenderIds, setDeletedRenderIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(`deleted-renders-${id}`);
+      return stored ? new Set(JSON.parse(stored)) : new Set();
+    } catch { return new Set(); }
+  });
   const [sharing, setSharing] = useState(false);
   const { runOrchestration, completePlanning, isAnalyzing, results, feedEntries, acknowledgment, planningQuestions, sessions, toggleCron, refreshSessions } = useDesignerAgent(id || "", project?.project_type);
 
@@ -100,10 +105,14 @@ const ProjectWorkspace = () => {
   }, []);
 
   const handleDeleteImage = useCallback((renderId: string) => {
-    setDeletedRenderIds((prev) => new Set(prev).add(renderId));
+    setDeletedRenderIds((prev) => {
+      const next = new Set(prev).add(renderId);
+      localStorage.setItem(`deleted-renders-${id}`, JSON.stringify([...next]));
+      return next;
+    });
     setKeptAssets((prev) => prev.filter((a) => a.id !== renderId));
     toast("Image removed");
-  }, []);
+  }, [id]);
 
   const handleRefineImage = useCallback((render: { id: string; url: string; label: string }) => {
     setChatOpen(true);
@@ -113,14 +122,30 @@ const ProjectWorkspace = () => {
 
   const handleAssetDelete = useCallback((assetId: string) => {
     setKeptAssets((prev) => prev.filter((a) => a.id !== assetId));
-    setDeletedRenderIds((prev) => new Set(prev).add(assetId));
+    setDeletedRenderIds((prev) => {
+      const next = new Set(prev).add(assetId);
+      localStorage.setItem(`deleted-renders-${id}`, JSON.stringify([...next]));
+      return next;
+    });
     toast("Asset removed");
-  }, []);
+  }, [id]);
 
   const handleAssetRefine = useCallback((asset: Asset) => {
     setChatOpen(true);
     runOrchestration(`Refine this ${asset.category}: "${asset.name}"`);
   }, [runOrchestration]);
+
+  const handleFilesUploaded = useCallback((urls: string[]) => {
+    const newAssets: Asset[] = urls.map((url, i) => ({
+      id: `upload-${Date.now()}-${i}`,
+      name: `Upload ${new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })}`,
+      category: "perspective" as const,
+      date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }),
+      imageUrl: url,
+    }));
+    setKeptAssets((prev) => [...prev, ...newAssets]);
+    setHasStarted(true);
+  }, []);
 
   const handleAnnotateImage = useCallback(async (renderId: string, x: number, y: number, text: string) => {
     if (!id) return;
@@ -175,9 +200,16 @@ const ProjectWorkspace = () => {
     folders: projectFolders,
   };
 
-  // Filter out deleted renders
+  // Deduplicate and filter out deleted renders/products
   const filteredResults = results
-    ? { ...results, renders: results.renders.filter((r) => !deletedRenderIds.has(r.id)) }
+    ? {
+        ...results,
+        renders: results.renders
+          .filter((r, i, arr) => arr.findIndex((x) => x.id === r.id) === i)
+          .filter((r) => !deletedRenderIds.has(r.id)),
+        products: results.products
+          .filter((p, i, arr) => arr.findIndex((x) => x.id === p.id) === i),
+      }
     : null;
 
   const dynamicAssets = filteredResults
@@ -191,7 +223,8 @@ const ProjectWorkspace = () => {
       }))
     : [];
 
-  const allAssets = [...keptAssets, ...dynamicAssets];
+  const keptIds = new Set(keptAssets.map((a) => a.id));
+  const allAssets = [...keptAssets, ...dynamicAssets.filter((a) => !keptIds.has(a.id))];
   const availableCategories = projectFolders.map((f) => f.name);
   const activeSession = activeFolder ? sessions.find(s => s.agent_type === activeFolder) : undefined;
   // Determine if workspace has any content
@@ -263,7 +296,7 @@ const ProjectWorkspace = () => {
           <EmptyBriefPrompt
             projectName={project.name}
             onSubmitBrief={handleBriefSubmit}
-            onFilesUploaded={(urls) => toast(`${urls.length} file(s) ready`)}
+            onFilesUploaded={handleFilesUploaded}
             projectId={id}
             isWorking={isAnalyzing}
           />
@@ -274,7 +307,7 @@ const ProjectWorkspace = () => {
             availableCategories={availableCategories}
             onAssetDelete={handleAssetDelete}
             onAssetRefine={handleAssetRefine}
-            onFilesUploaded={(urls) => toast(`${urls.length} file(s) ready`)}
+            onFilesUploaded={handleFilesUploaded}
             projectId={id}
             cronEnabled={activeSession?.cron_enabled}
             cronInterval={activeSession?.cron_interval}
