@@ -151,7 +151,7 @@ async function curateWithLLM(
     name: (p.name as string) || "Product",
     brand: (p.brand as string) || "Unknown",
     category: (p.category as string) || "decor",
-    price: typeof p.price === "number" ? p.price : parseFloat(String(p.price).replace(/[^0-9.]/g, "")) || 0,
+    price: Math.max(0, typeof p.price === "number" ? p.price : parseFloat(String(p.price).replace(/[^0-9.]/g, "")) || 0),
     url: (p.url as string) || "",
     image: (p.image as string) || "",
     match_score: typeof p.match_score === "number" ? p.match_score : 0.85,
@@ -183,6 +183,15 @@ Deno.serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "Unauthorized — invalid or expired token" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // Limit request body size (1MB)
+    const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+    if (contentLength > 1_048_576) {
+      return new Response(
+        JSON.stringify({ error: "Request body too large (max 1MB)" }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 

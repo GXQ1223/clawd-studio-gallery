@@ -88,7 +88,8 @@ const ProjectWorkspace = () => {
   const handleAgentSubmit = useCallback(
     async (text: string, attachments: Attachment[]) => {
       if (!text.trim() && attachments.length === 0) return;
-      const brief = text || "Modern design with renders and furniture sourcing";
+      const trimmed = text.slice(0, 10_000);
+      const brief = trimmed || "Modern design with renders and furniture sourcing";
 
       // Upload attachments to Supabase Storage and collect public URLs
       const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]);

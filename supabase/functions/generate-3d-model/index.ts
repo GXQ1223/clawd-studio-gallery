@@ -412,10 +412,27 @@ serve(async (req) => {
       );
     }
 
+    // Limit request body size (2MB for 3D model data)
+    const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+    if (contentLength > 2_097_152) {
+      return new Response(
+        JSON.stringify({ error: "Request body too large (max 2MB)" }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const { paths, project_id, grid_scale, wall_height, wall_thickness, openings } = await req.json();
 
     if (!Array.isArray(paths) || paths.length === 0) {
       throw new Error("paths array is required (each with a points array of {x, y})");
+    }
+    if (paths.length > 500) {
+      throw new Error("Too many paths (max 500)");
+    }
+    for (const path of paths) {
+      if (path.points && path.points.length > 5000) {
+        throw new Error("Too many points in a path (max 5000)");
+      }
     }
     if (!project_id || typeof project_id !== "string") {
       throw new Error("project_id is required");
@@ -429,7 +446,7 @@ serve(async (req) => {
 
     const height = wall_height || 2.8;
     const thickness = wall_thickness || 0.15;
-    const validOpenings: Opening[] = Array.isArray(openings) ? openings : [];
+    const validOpenings: Opening[] = Array.isArray(openings) ? openings.slice(0, 200) : [];
 
     console.log(`Building 3D: ${paths.length} paths, ${validOpenings.length} openings, h=${height}m`);
 

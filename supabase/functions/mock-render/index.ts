@@ -296,6 +296,8 @@ async function generateWithDallE(
   const promises = CAMERA_VARIATIONS.slice(0, count).map(async (variation) => {
     const prompt = buildRenderPrompt(style, description, variation, hasReferenceImages, styleEmbedding);
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60_000);
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: {
@@ -310,7 +312,9 @@ async function generateWithDallE(
         quality: "hd",
         response_format: "url",
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const err = await response.text();
@@ -395,6 +399,15 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({ error: "Unauthorized — invalid or expired token" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    // Limit request body size (1MB)
+    const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+    if (contentLength > 1_048_576) {
+      return new Response(
+        JSON.stringify({ error: "Request body too large (max 1MB)" }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 

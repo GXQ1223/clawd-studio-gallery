@@ -163,10 +163,19 @@ serve(async (req) => {
       );
     }
 
+    // Limit request body size (1MB)
+    const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+    if (contentLength > 1_048_576) {
+      return new Response(
+        JSON.stringify({ error: "Request body too large (max 1MB)" }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const { brief, conversation_history } = await req.json();
 
-    if (!brief || typeof brief !== "string") {
-      throw new Error("Missing or invalid 'brief' field");
+    if (!brief || typeof brief !== "string" || brief.length > 10_000) {
+      throw new Error("Missing or invalid 'brief' field (max 10,000 characters)");
     }
 
     const openaiKey = Deno.env.get("OPENAI_API_KEY");
@@ -204,6 +213,8 @@ serve(async (req) => {
       content: `Analyze this design brief:\n\n${brief}`,
     });
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -217,7 +228,9 @@ serve(async (req) => {
         max_tokens: 1000,
         response_format: { type: "json_object" },
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!response.ok) {
       const errText = await response.text();
