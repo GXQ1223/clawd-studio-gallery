@@ -52,7 +52,7 @@
   - Add a root .env.example template alongside existing supabase/.env.example
   - Consider using git filter-branch or BFG to remove .env from history
 
-- [ ] 8. Pin Gemini model version and add fallback
+- [x] 8. Pin Gemini model version and add fallback
   - gemini-2.5-flash-image model name hardcoded with v1beta endpoint — subject to breaking changes
   - Pin to a specific stable version when available
   - Add a GEMINI_MODEL env var so model can be updated without code deployment

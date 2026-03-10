@@ -1,3 +1,4 @@
+// @ts-nocheck — Deno runtime, not type-checked by project TS config
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -15,11 +16,14 @@ function getEnv(key: string): string | undefined {
 }
 
 const GEMINI_API_KEY = getEnv("GEMINI_API_KEY");
-const GEMINI_MODEL = "gemini-2.0-flash-exp";
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const GEMINI_MODEL = getEnv("GEMINI_MODEL") || "gemini-2.0-flash-exp";
+const GEMINI_FALLBACK_MODEL = getEnv("GEMINI_FALLBACK_MODEL") || "gemini-1.5-flash";
+function geminiEndpoint(model: string) {
+  return `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
+}
 
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+const SUPABASE_URL = getEnv("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = getEnv("SUPABASE_SERVICE_ROLE_KEY")!;
 
 /** Discipline-specific configuration */
 const DISCIPLINE_CONFIG: Record<string, {
@@ -123,13 +127,13 @@ function buildDesignPrompt(
 /** Per-call timeout in ms (40s — leaves room for 3 parallel calls within 150s limit) */
 const PER_CALL_TIMEOUT_MS = 40_000;
 
-/** Call Gemini API to generate a single image, with per-call timeout */
-async function generateImage(prompt: string): Promise<string | null> {
+/** Call a specific Gemini model to generate a single image */
+async function callGeminiModel(prompt: string, model: string): Promise<string | null> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PER_CALL_TIMEOUT_MS);
 
   try {
-    const response = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
+    const response = await fetch(`${geminiEndpoint(model)}?key=${GEMINI_API_KEY}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: controller.signal,
@@ -144,27 +148,40 @@ async function generateImage(prompt: string): Promise<string | null> {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Gemini API error (${response.status}):`, errorText);
-      throw new Error(`Gemini API returned ${response.status}: ${errorText.slice(0, 200)}`);
+      console.error(`Gemini API error (${model}, ${response.status}):`, errorText);
+      throw new Error(`Gemini API (${model}) returned ${response.status}: ${errorText.slice(0, 200)}`);
     }
 
     const data = await response.json();
     const parts = data?.candidates?.[0]?.content?.parts;
     if (!parts || parts.length === 0) {
-      console.error("No parts in Gemini response:", JSON.stringify(data).slice(0, 500));
+      console.error(`No parts in ${model} response:`, JSON.stringify(data).slice(0, 500));
       return null;
     }
 
     for (const part of parts) {
       if (part.inlineData?.data) {
-        return part.inlineData.data; // base64 string
+        return part.inlineData.data;
       }
     }
 
-    console.error("No image data in response parts");
+    console.error(`No image data in ${model} response parts`);
     return null;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+/** Generate image with primary model, fall back to secondary on failure */
+async function generateImage(prompt: string): Promise<string | null> {
+  try {
+    return await callGeminiModel(prompt, GEMINI_MODEL);
+  } catch (primaryErr) {
+    if (GEMINI_FALLBACK_MODEL && GEMINI_FALLBACK_MODEL !== GEMINI_MODEL) {
+      console.warn(`Primary model ${GEMINI_MODEL} failed, trying fallback ${GEMINI_FALLBACK_MODEL}`);
+      return await callGeminiModel(prompt, GEMINI_FALLBACK_MODEL);
+    }
+    throw primaryErr;
   }
 }
 
