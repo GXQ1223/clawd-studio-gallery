@@ -38,7 +38,7 @@
   - Return 400 for invalid inputs
   - Sanitize description before injecting into prompt (prompt injection risk)
 
-- [ ] 6. Fix sequential generation timeout risk
+- [x] 6. Fix sequential generation timeout risk
   - Three sequential Gemini calls take 30-90 seconds, risking Supabase free tier 150s timeout
   - Option A: Generate one image per function call, call three times from client
   - Option B: Reduce to 1-2 variations and parallelize where possible

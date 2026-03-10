@@ -7,7 +7,14 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
+function getEnv(key: string): string | undefined {
+  const g: any = globalThis;
+  if (g.Deno && typeof g.Deno.env?.get === "function") return g.Deno.env.get(key);
+  if (g.process && g.process.env) return g.process.env[key];
+  return undefined;
+}
+
+const GEMINI_API_KEY = getEnv("GEMINI_API_KEY");
 const GEMINI_MODEL = "gemini-2.0-flash-exp";
 const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
 
@@ -113,41 +120,52 @@ function buildDesignPrompt(
   ].join(" ");
 }
 
-/** Call Gemini API directly to generate a single image */
+/** Per-call timeout in ms (40s — leaves room for 3 parallel calls within 150s limit) */
+const PER_CALL_TIMEOUT_MS = 40_000;
+
+/** Call Gemini API to generate a single image, with per-call timeout */
 async function generateImage(prompt: string): Promise<string | null> {
-  const response = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        responseModalities: ["IMAGE", "TEXT"],
-        imagenConfig: { aspectRatio: "16:9" },
-      },
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PER_CALL_TIMEOUT_MS);
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error(`Gemini API error (${response.status}):`, errorText);
-    throw new Error(`Gemini API returned ${response.status}: ${errorText.slice(0, 200)}`);
-  }
+  try {
+    const response = await fetch(`${GEMINI_ENDPOINT}?key=${GEMINI_API_KEY}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ["IMAGE", "TEXT"],
+          imagenConfig: { aspectRatio: "16:9" },
+        },
+      }),
+    });
 
-  const data = await response.json();
-  const parts = data?.candidates?.[0]?.content?.parts;
-  if (!parts || parts.length === 0) {
-    console.error("No parts in Gemini response:", JSON.stringify(data).slice(0, 500));
-    return null;
-  }
-
-  for (const part of parts) {
-    if (part.inlineData?.data) {
-      return part.inlineData.data; // base64 string
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Gemini API error (${response.status}):`, errorText);
+      throw new Error(`Gemini API returned ${response.status}: ${errorText.slice(0, 200)}`);
     }
-  }
 
-  console.error("No image data in response parts");
-  return null;
+    const data = await response.json();
+    const parts = data?.candidates?.[0]?.content?.parts;
+    if (!parts || parts.length === 0) {
+      console.error("No parts in Gemini response:", JSON.stringify(data).slice(0, 500));
+      return null;
+    }
+
+    for (const part of parts) {
+      if (part.inlineData?.data) {
+        return part.inlineData.data; // base64 string
+      }
+    }
+
+    console.error("No image data in response parts");
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Upload base64 image to Supabase Storage */
@@ -243,16 +261,11 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    const renders: Array<{
-      id: string; url: string; label: string;
-      style: string; resolution: string; generated_at: string;
-    }> = [];
-
     const variationLabels = ["Direction A", "Direction B", "Direction C"];
     const disciplineConfig = DISCIPLINE_CONFIG[discipline] || DISCIPLINE_CONFIG.interior;
 
-    // Generate 3 variations sequentially (Gemini rate limits)
-    for (let i = 0; i < 3; i++) {
+    // Generate 3 variations in parallel with per-call timeouts
+    const promises = Array.from({ length: 3 }, async (_, i) => {
       try {
         const prompt = buildDesignPrompt(
           styleLabel,
@@ -264,23 +277,27 @@ serve(async (req) => {
         const b64 = await generateImage(prompt);
         if (!b64) {
           console.error(`Variation ${i} returned no image data, skipping`);
-          continue;
+          return null;
         }
 
         const url = await uploadToStorage(supabase, project_id, b64, i);
 
-        renders.push({
+        return {
           id: `render-${Date.now()}-${i}`,
           url,
           label: `${styleLabel.charAt(0).toUpperCase() + styleLabel.slice(1)} ${variationLabels[i]}`,
           style: styleLabel,
           resolution: "1024x576",
           generated_at: new Date().toISOString(),
-        });
+        };
       } catch (err) {
         console.error(`Failed to generate variation ${i}:`, err);
+        return null;
       }
-    }
+    });
+
+    const settled = await Promise.all(promises);
+    const renders = settled.filter((r): r is NonNullable<typeof r> => r !== null);
 
     return new Response(
       JSON.stringify({
