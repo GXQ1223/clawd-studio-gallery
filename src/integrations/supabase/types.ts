@@ -146,10 +146,13 @@ export type Database = {
           id: string
           image_url: string | null
           name: string
+          project_type: string
           room: string | null
+          share_token: string | null
           status: string
           updated_at: string | null
           user_id: string
+          wall_layout: Json | null
         }
         Insert: {
           agent_task?: string | null
@@ -160,10 +163,13 @@ export type Database = {
           id?: string
           image_url?: string | null
           name: string
+          project_type?: string
           room?: string | null
+          share_token?: string | null
           status?: string
           updated_at?: string | null
           user_id: string
+          wall_layout?: Json | null
         }
         Update: {
           agent_task?: string | null
@@ -174,10 +180,13 @@ export type Database = {
           id?: string
           image_url?: string | null
           name?: string
+          project_type?: string
           room?: string | null
+          share_token?: string | null
           status?: string
           updated_at?: string | null
           user_id?: string
+          wall_layout?: Json | null
         }
         Relationships: []
       }
