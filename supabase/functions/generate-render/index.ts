@@ -4,19 +4,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY");
-const GEMINI_MODEL = "gemini-2.5-flash-image";
-const GEMINI_ENDPOINT = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
-
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-/**
- * Build an architectural/interior design prompt optimized for photorealistic renders.
- */
 function buildDesignPrompt(
   style: string,
   description: string,
@@ -31,86 +25,60 @@ function buildDesignPrompt(
   const angle = cameraAngles[variationIndex % cameraAngles.length];
 
   return [
-    `Generate a photorealistic interior design render of the following space:`,
-    ``,
+    `A photorealistic interior design render of the following space:`,
     `Style: ${style}`,
     `Description: ${description}`,
-    ``,
     `Camera: ${angle}.`,
-    ``,
-    `Requirements:`,
-    `- Photorealistic quality, architectural visualization standard`,
-    `- Natural lighting with warm ambient fill and soft shadows`,
-    `- High-end materials and finishes appropriate for the ${style} style`,
-    `- Realistic furniture proportions and placement`,
-    `- Clean composition with professional architectural photography framing`,
-    `- 4K quality, sharp details on materials and textures`,
-    `- No watermarks, no text overlays, no logos`,
-    `- No people or animals in the scene`,
-  ].join("\n");
+    `Photorealistic quality, architectural visualization standard.`,
+    `Natural lighting with warm ambient fill and soft shadows.`,
+    `High-end materials and finishes appropriate for the ${style} style.`,
+    `Realistic furniture proportions and placement.`,
+    `Clean composition with professional architectural photography framing.`,
+    `Sharp details on materials and textures.`,
+    `No watermarks, no text overlays, no logos, no people, no animals.`,
+  ].join(" ");
 }
 
-/**
- * Call Gemini API to generate a single image.
- */
-async function generateImage(prompt: string): Promise<Uint8Array | null> {
-  const response = await fetch(GEMINI_ENDPOINT, {
+async function generateImageDalle3(prompt: string): Promise<string> {
+  const response = await fetch("https://api.openai.com/v1/images/generations", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-goog-api-key": GEMINI_API_KEY!,
+      Authorization: `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      contents: [
-        {
-          parts: [{ text: prompt }],
-        },
-      ],
-      generationConfig: {
-        responseModalities: ["IMAGE"],
-        imageConfig: {
-          aspectRatio: "16:9",
-        },
-      },
+      model: "dall-e-3",
+      prompt,
+      n: 1,
+      size: "1792x1024",
+      quality: "hd",
+      response_format: "b64_json",
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`Gemini API error (${response.status}):`, errorText);
-    throw new Error(
-      `Gemini API returned ${response.status}: ${errorText.slice(0, 200)}`,
-    );
+    console.error(`DALL-E 3 API error (${response.status}):`, errorText);
+    throw new Error(`DALL-E 3 returned ${response.status}: ${errorText.slice(0, 200)}`);
   }
 
   const data = await response.json();
-
-  // Extract image from response parts
-  const parts = data?.candidates?.[0]?.content?.parts;
-  if (!parts || parts.length === 0) {
-    console.error("No parts in Gemini response:", JSON.stringify(data));
-    return null;
+  const b64 = data?.data?.[0]?.b64_json;
+  if (!b64) {
+    throw new Error("No image data in DALL-E 3 response");
   }
-
-  for (const part of parts) {
-    if (part.inlineData?.data) {
-      // Decode base64 to binary
-      const binaryString = atob(part.inlineData.data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      return bytes;
-    }
-  }
-
-  console.error("No image data in Gemini response parts:", JSON.stringify(parts.map((p: Record<string, unknown>) => Object.keys(p))));
-  return null;
+  return b64;
 }
 
-/**
- * Upload image bytes to Supabase Storage and return public URL.
- */
+function base64ToUint8Array(b64: string): Uint8Array {
+  const binaryString = atob(b64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
 async function uploadToStorage(
   supabase: any,
   projectId: string,
@@ -145,7 +113,7 @@ serve(async (req) => {
   }
 
   try {
-    // JWT verification — reject unauthenticated requests
+    // JWT verification
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -163,20 +131,16 @@ serve(async (req) => {
       );
     }
 
-    if (!GEMINI_API_KEY) {
-      throw new Error(
-        "GEMINI_API_KEY is not configured. Set it in Supabase Edge Function secrets.",
-      );
+    if (!OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY is not configured.");
     }
 
     const { style, description, project_id } = await req.json();
     const styleLabel = style || "contemporary";
     const startTime = Date.now();
 
-    // Initialize Supabase client with service role for storage uploads
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Generate 3 render variations sequentially (Gemini rate limits)
     const renders: Array<{
       id: string;
       url: string;
@@ -196,14 +160,8 @@ serve(async (req) => {
           i,
         );
 
-        const imageBytes = await generateImage(prompt);
-
-        if (!imageBytes) {
-          console.error(`Variation ${i} returned no image data, skipping`);
-          continue;
-        }
-
-        // Upload to Supabase Storage
+        const b64 = await generateImageDalle3(prompt);
+        const imageBytes = base64ToUint8Array(b64);
         const url = await uploadToStorage(supabase, project_id, imageBytes, i);
 
         renders.push({
@@ -211,12 +169,11 @@ serve(async (req) => {
           url,
           label: `${styleLabel.charAt(0).toUpperCase() + styleLabel.slice(1)} ${variationLabels[i]}`,
           style: styleLabel,
-          resolution: "1408x768",
+          resolution: "1792x1024",
           generated_at: new Date().toISOString(),
         });
       } catch (err) {
         console.error(`Failed to generate variation ${i}:`, err);
-        // Continue with remaining variations
       }
     }
 
@@ -228,11 +185,9 @@ serve(async (req) => {
         project_id,
         renders,
         processing_time_ms: processingTime,
-        engine: "gemini-2.5-flash-image (live)",
+        engine: "dall-e-3 (live)",
       }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
     console.error("generate-render error:", error);
