@@ -19,7 +19,7 @@
   - Use discipline map: residential→"interior design render", architecture→"architectural exterior render", landscape→"landscape design visualization", etc.
   - Fix fallback description from "A well-designed interior space" to be discipline-aware
 
-- [ ] 3. Fix storage path mismatch with delete policy
+- [x] 3. Fix storage path mismatch with delete policy
   - Edge function stores renders at {projectId}/render-{timestamp}-{index}.png
   - Storage delete policy checks (storage.foldername(name))[1] = auth.uid()
   - Project UUIDs ≠ user UUIDs, so deletions silently fail
