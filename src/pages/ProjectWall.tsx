@@ -1,9 +1,10 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useParams, Navigate, useNavigate } from "react-router-dom";
-import { useProject } from "@/hooks/useProjects";
-import { wallAssets, wallZones, type WallAsset } from "@/data/wall-data";
-import { riversideFeed } from "@/data/workspace-data";
-import { ArrowLeft } from "lucide-react";
+import { useProject, useUpdateProject } from "@/hooks/useProjects";
+import { wallZones, type WallAsset } from "@/data/wall-data";
+import { ArrowLeft, Loader2 } from "lucide-react";
+import { DesignerAgent, type RenderResult, type ProductResult } from "@/lib/designerAgent";
+import { supabase } from "@/integrations/supabase/client";
 
 /* ── SVG Visuals ── */
 
@@ -35,11 +36,66 @@ const renderGradients = [
   "linear-gradient(135deg, #c4bfcc 0%, #9e97ac 100%)",
 ];
 
-const refGradients = [
-  "linear-gradient(135deg, #b8c4c2 0%, #8fa8a4 100%)",
-  "linear-gradient(135deg, #c2cac0 0%, #96a892 100%)",
-  "linear-gradient(135deg, #c9c0b4 0%, #b0a89e 100%)",
-];
+/* ── Default positions for auto-layout ── */
+
+function defaultRenderPosition(index: number): { x: number; y: number; rotation: number } {
+  const col = index % 3;
+  const row = Math.floor(index / 3);
+  return { x: 100 + col * 360, y: 100 + row * 260, rotation: (Math.random() - 0.5) * 3 };
+}
+
+function defaultProductPosition(index: number): { x: number; y: number; rotation: number } {
+  const col = index % 3;
+  const row = Math.floor(index / 3);
+  return { x: 920 + col * 240, y: 100 + row * 210, rotation: (Math.random() - 0.5) * 2 };
+}
+
+/* ── Convert live data to WallAsset ── */
+
+function rendersToWallAssets(
+  renders: RenderResult[],
+  layout: Record<string, { x: number; y: number; rotation: number }>
+): WallAsset[] {
+  return renders.map((r, i) => {
+    const pos = layout[r.id] || defaultRenderPosition(i);
+    return {
+      id: r.id,
+      name: r.label,
+      category: "render" as const,
+      x: pos.x,
+      y: pos.y,
+      width: 320,
+      height: 220,
+      rotation: pos.rotation,
+      aiGenerated: true,
+      style: "render" as const,
+      imageUrl: r.url,
+    };
+  });
+}
+
+function productsToWallAssets(
+  products: ProductResult[],
+  layout: Record<string, { x: number; y: number; rotation: number }>
+): WallAsset[] {
+  return products.map((p, i) => {
+    const pos = layout[p.id] || defaultProductPosition(i);
+    return {
+      id: p.id,
+      name: p.name,
+      category: "product" as const,
+      x: pos.x,
+      y: pos.y,
+      width: 220,
+      height: 180,
+      rotation: pos.rotation,
+      style: "product" as const,
+      productName: p.name,
+      productPrice: `$${p.price.toLocaleString()}`,
+      productBrand: p.brand,
+    };
+  });
+}
 
 /* ── Asset Card ── */
 
@@ -48,52 +104,98 @@ const AssetCard = ({
   index,
   selected,
   onSelect,
+  onDragEnd,
+  zoom,
 }: {
   asset: WallAsset;
   index: number;
   selected: boolean;
   onSelect: (id: string) => void;
+  onDragEnd: (id: string, x: number, y: number) => void;
+  zoom: number;
 }) => {
   const [hovered, setHovered] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const posRef = useRef({ x: asset.x, y: asset.y });
+
+  // Keep posRef synced with prop changes
+  useEffect(() => {
+    if (!isDragging) {
+      posRef.current = { x: asset.x, y: asset.y };
+    }
+  }, [asset.x, asset.y, isDragging]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    e.preventDefault();
+    onSelect(asset.id);
+    setIsDragging(true);
+    dragOffset.current = {
+      x: e.clientX / zoom - asset.x,
+      y: e.clientY / zoom - asset.y,
+    };
+
+    const handleMove = (ev: MouseEvent) => {
+      const newX = ev.clientX / zoom - dragOffset.current.x;
+      const newY = ev.clientY / zoom - dragOffset.current.y;
+      posRef.current = { x: newX, y: newY };
+      const el = document.getElementById(`wall-asset-${asset.id}`);
+      if (el) {
+        el.style.left = `${newX}px`;
+        el.style.top = `${newY}px`;
+      }
+    };
+
+    const handleUp = () => {
+      setIsDragging(false);
+      onDragEnd(asset.id, posRef.current.x, posRef.current.y);
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+  }, [asset.id, asset.x, asset.y, zoom, onSelect, onDragEnd]);
 
   const bg =
     asset.style === "render" ? renderGradients[index % 3] :
     asset.style === "plan" ? "#fafafa" :
     asset.style === "sketch" ? "#f5f3f0" :
     asset.style === "product" ? "#ffffff" :
-    refGradients[index % 3];
+    "linear-gradient(135deg, #b8c4c2 0%, #8fa8a4 100%)";
 
   const border = asset.style === "plan" || asset.style === "sketch" || asset.style === "product"
     ? "1px solid rgba(0,0,0,0.1)" : "none";
 
   return (
     <div
+      id={`wall-asset-${asset.id}`}
       className="absolute cursor-grab active:cursor-grabbing select-none"
       style={{
         left: asset.x,
         top: asset.y,
         width: asset.width,
         transform: `rotate(${asset.rotation}deg)`,
-        zIndex: selected ? 100 : hovered ? 50 : 1,
-        transition: "box-shadow 0.2s ease",
-        boxShadow: hovered ? "0 4px 20px rgba(0,0,0,0.1)" : "none",
+        zIndex: isDragging ? 200 : selected ? 100 : hovered ? 50 : 1,
+        transition: isDragging ? "none" : "box-shadow 0.2s ease",
+        boxShadow: isDragging ? "0 8px 30px rgba(0,0,0,0.2)" : hovered ? "0 4px 20px rgba(0,0,0,0.1)" : "none",
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onMouseDown={(e) => {
-        e.stopPropagation();
-        onSelect(asset.id);
-      }}
+      onMouseDown={handleMouseDown}
     >
-      {/* Visual */}
       <div
         className="relative overflow-hidden"
         style={{ height: asset.height, background: bg, border }}
       >
+        {/* Render image */}
+        {asset.style === "render" && asset.imageUrl && (
+          <img src={asset.imageUrl} alt={asset.name} className="absolute inset-0 w-full h-full object-cover" />
+        )}
         {asset.style === "plan" && <PlanLines />}
         {asset.style === "sketch" && <SketchLines />}
 
-        {/* Product content */}
         {asset.style === "product" && (
           <div className="absolute inset-0 flex flex-col">
             <div className="flex-1" style={{ background: "linear-gradient(135deg, #e8e4e0 0%, #d1cbc4 100%)" }} />
@@ -107,20 +209,17 @@ const AssetCard = ({
           </div>
         )}
 
-        {/* AI badge */}
         {asset.aiGenerated && (
           <div className="absolute top-2 right-2 text-[14px] opacity-50 select-none">★</div>
         )}
       </div>
 
-      {/* Label */}
       <div className="mt-1.5 flex items-center gap-2">
         <span className="font-mono text-[10px] text-muted-foreground truncate">{asset.name}</span>
         <span className="font-mono text-[9px] text-muted-foreground/50 shrink-0">{asset.category}</span>
       </div>
 
-      {/* Selected actions */}
-      {selected && (
+      {selected && !isDragging && (
         <div className="absolute -bottom-8 left-0 flex items-center gap-1 animate-fade-in">
           <button className="px-2 py-0.5 font-mono text-[9px] text-muted-foreground gallery-border hover:text-foreground transition-colors bg-background">Remove</button>
           <button className="px-2 py-0.5 font-mono text-[9px] text-muted-foreground gallery-border hover:text-foreground transition-colors bg-background">Set as Hero</button>
@@ -133,7 +232,8 @@ const AssetCard = ({
 
 /* ── Mini Map ── */
 
-const MiniMap = ({ panX, panY, zoom, canvasW, canvasH, viewW, viewH }: {
+const MiniMap = ({ assets, panX, panY, zoom, canvasW, canvasH, viewW, viewH }: {
+  assets: WallAsset[];
   panX: number; panY: number; zoom: number;
   canvasW: number; canvasH: number; viewW: number; viewH: number;
 }) => {
@@ -148,7 +248,7 @@ const MiniMap = ({ panX, panY, zoom, canvasW, canvasH, viewW, viewH }: {
 
   return (
     <div className="w-[100px] h-[75px] relative" style={{ border: "1px solid rgba(0,0,0,0.12)", background: "#fafafa" }}>
-      {wallAssets.map((a) => (
+      {assets.map((a) => (
         <div key={a.id} className="absolute" style={{
           left: a.x * sx, top: a.y * sy,
           width: a.width * sx, height: a.height * sy,
@@ -164,61 +264,13 @@ const MiniMap = ({ panX, panY, zoom, canvasW, canvasH, viewW, viewH }: {
   );
 };
 
-/* ── Agent Panel ── */
-
-const AgentPanel = () => {
-  const [expanded, setExpanded] = useState(false);
-
-  return (
-    <div
-      className="fixed right-0 top-[48px] bottom-0 bg-background z-40 transition-all duration-300 flex flex-col"
-      style={{
-        width: expanded ? 280 : 24,
-        borderLeft: "1px solid rgba(0,0,0,0.08)",
-      }}
-    >
-      <button
-        onClick={() => setExpanded(!expanded)}
-        className="h-[48px] flex items-center justify-center shrink-0 hover:bg-secondary/50 transition-colors"
-      >
-        {expanded ? (
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polyline points="15 18 9 12 15 6" /></svg>
-        ) : (
-          <div className="flex flex-col gap-1.5 items-center">
-            <span className="status-dot status-dot-active animate-pulse-dot" />
-            <span className="status-dot status-dot-agent" />
-            <span className="status-dot status-dot-active" />
-          </div>
-        )}
-      </button>
-
-      {expanded && (
-        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-0 animate-fade-in">
-          {riversideFeed.map((entry) => (
-            <div key={entry.id} className="py-1.5 flex gap-2 items-start">
-              <span className="font-mono text-[9px] text-muted-foreground shrink-0 mt-[2px] w-[32px]">{entry.time}</span>
-              <span className="flex items-start gap-1 text-[11px] leading-relaxed">
-                {entry.inProgress ? (
-                  <span className="mt-[4px] shrink-0 status-dot status-dot-agent animate-pulse-dot" />
-                ) : (
-                  <span className="mt-[2px] shrink-0 text-[9px] opacity-40 select-none">★</span>
-                )}
-                <span className={entry.inProgress ? "text-muted-foreground" : "text-foreground"}>{entry.text}</span>
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
 /* ── Main Page ── */
 
 const ProjectWall = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { data: project, isLoading } = useProject(id);
+  const updateProject = useUpdateProject();
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [pan, setPan] = useState({ x: 0, y: 0 });
@@ -227,8 +279,65 @@ const ProjectWall = () => {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [selected, setSelected] = useState<string | null>(null);
 
+  const [assets, setAssets] = useState<WallAsset[]>([]);
+  const [isLoadingAssets, setIsLoadingAssets] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Debounced save ref
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const layoutRef = useRef<Record<string, { x: number; y: number; rotation: number }>>({});
+
   const canvasW = 1600;
   const canvasH = 1200;
+
+  // Load live assets from agent_sessions result_data
+  useEffect(() => {
+    if (!id || !project) return;
+
+    setIsLoadingAssets(true);
+    setLoadError(null);
+
+    const savedLayout = (project.wall_layout || {}) as Record<string, { x: number; y: number; rotation: number }>;
+    layoutRef.current = { ...savedLayout };
+
+    DesignerAgent.loadPersistedResults(id).then((results) => {
+      if (!results) {
+        setAssets([]);
+        setIsLoadingAssets(false);
+        return;
+      }
+
+      const renderAssets = rendersToWallAssets(results.renders, savedLayout);
+      const productAssets = productsToWallAssets(results.products, savedLayout);
+      setAssets([...renderAssets, ...productAssets]);
+      setIsLoadingAssets(false);
+    }).catch((err) => {
+      console.error("Failed to load wall assets:", err);
+      setLoadError("Failed to load assets");
+      setIsLoadingAssets(false);
+    });
+  }, [id, project]);
+
+  // Persist layout to Supabase (debounced)
+  const persistLayout = useCallback((newLayout: Record<string, { x: number; y: number; rotation: number }>) => {
+    if (!id) return;
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = setTimeout(() => {
+      updateProject.mutate({ id, wall_layout: newLayout });
+    }, 1000);
+  }, [id, updateProject]);
+
+  const handleDragEnd = useCallback((assetId: string, x: number, y: number) => {
+    // Update local state
+    setAssets((prev) =>
+      prev.map((a) => (a.id === assetId ? { ...a, x, y } : a))
+    );
+
+    // Update layout ref and persist
+    const asset = assets.find((a) => a.id === assetId);
+    layoutRef.current[assetId] = { x, y, rotation: asset?.rotation || 0 };
+    persistLayout({ ...layoutRef.current });
+  }, [assets, persistLayout]);
 
   const handleWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
@@ -276,7 +385,7 @@ const ProjectWall = () => {
           <span className="text-[13px] font-medium truncate max-w-[200px]">{project.name}</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <button className="h-[30px] px-3 gallery-border text-[12px] font-medium hover:bg-secondary transition-colors">View Deck</button>
+          <button onClick={() => navigate(`/workspace/deck/${id}`)} className="h-[30px] px-3 gallery-border text-[12px] font-medium hover:bg-secondary transition-colors">View Deck</button>
           <button className="h-[30px] px-3 gallery-border text-[12px] font-medium hover:bg-secondary transition-colors">Share</button>
           <div className="flex items-center gap-2 ml-2">
             <span className="status-dot status-dot-active animate-pulse-dot" />
@@ -301,37 +410,57 @@ const ProjectWall = () => {
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
-        <div
-          style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-            transformOrigin: "0 0",
-            width: canvasW,
-            height: canvasH,
-            position: "absolute",
-          }}
-        >
-          {/* Zone labels */}
-          {wallZones.map((z) => (
-            <div
-              key={z.label}
-              className="absolute font-mono text-[11px] text-muted-foreground/30 tracking-[0.15em] uppercase select-none"
-              style={{ left: z.x, top: z.y }}
-            >
-              {z.label}
+        {isLoadingAssets ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Loader2 size={20} className="animate-spin text-muted-foreground" />
+            <span className="ml-3 font-mono text-[12px] text-muted-foreground">Loading wall…</span>
+          </div>
+        ) : loadError ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="font-mono text-[12px] text-destructive">{loadError}</span>
+          </div>
+        ) : assets.length === 0 ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center">
+              <p className="font-mono text-[13px] text-muted-foreground">No assets yet</p>
+              <p className="font-mono text-[11px] text-muted-foreground/50 mt-1">Generate renders in the workspace to see them here</p>
             </div>
-          ))}
+          </div>
+        ) : (
+          <div
+            style={{
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              transformOrigin: "0 0",
+              width: canvasW,
+              height: canvasH,
+              position: "absolute",
+            }}
+          >
+            {/* Zone labels */}
+            {wallZones.map((z) => (
+              <div
+                key={z.label}
+                className="absolute font-mono text-[11px] text-muted-foreground/30 tracking-[0.15em] uppercase select-none"
+                style={{ left: z.x, top: z.y }}
+              >
+                {z.label}
+              </div>
+            ))}
 
-          {/* Assets */}
-          {wallAssets.map((asset, i) => (
-            <AssetCard
-              key={asset.id}
-              asset={asset}
-              index={i}
-              selected={selected === asset.id}
-              onSelect={setSelected}
-            />
-          ))}
-        </div>
+            {/* Assets */}
+            {assets.map((asset, i) => (
+              <AssetCard
+                key={asset.id}
+                asset={asset}
+                index={i}
+                selected={selected === asset.id}
+                onSelect={setSelected}
+                onDragEnd={handleDragEnd}
+                zoom={zoom}
+              />
+            ))}
+          </div>
+        )}
 
         {/* Fixed UI: zoom controls bottom-right */}
         <div className="absolute bottom-4 right-8 flex items-center gap-1 z-40">
@@ -352,23 +481,16 @@ const ProjectWall = () => {
 
         {/* Fixed UI: mini-map bottom-left */}
         <div className="absolute bottom-4 left-4 z-40">
-          <MiniMap panX={pan.x} panY={pan.y} zoom={zoom} canvasW={canvasW} canvasH={canvasH} viewW={viewW} viewH={viewH} />
+          <MiniMap assets={assets} panX={pan.x} panY={pan.y} zoom={zoom} canvasW={canvasW} canvasH={canvasH} viewW={viewW} viewH={viewH} />
         </div>
 
-        {/* Fixed UI: Add Asset top-right */}
+        {/* Fixed UI: asset count top-right */}
         <div className="absolute top-4 right-8 z-40 flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <span className="status-dot status-dot-active animate-pulse-dot" />
-            <span className="font-mono text-[10px] text-muted-foreground">agent active</span>
-          </div>
-          <button className="h-[30px] px-3 bg-foreground text-background text-[12px] font-medium hover:opacity-90 transition-opacity">
-            Add Asset
-          </button>
+          <span className="font-mono text-[10px] text-muted-foreground">
+            {assets.length} asset{assets.length !== 1 ? "s" : ""}
+          </span>
         </div>
       </div>
-
-      {/* Agent panel */}
-      <AgentPanel />
     </div>
   );
 };

@@ -34,6 +34,7 @@ const NewProjectModal = ({ open, onOpenChange }: Props) => {
         room: room.trim() || projectTypes.find(t => t.value === projectType)?.label || undefined,
         dimensions: dimensions.trim() || "TBD",
         budget: budget.trim() || undefined,
+        project_type: projectType,
       });
       toast.success("Project created");
       onOpenChange(false);

@@ -1,19 +1,60 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, Navigate, useNavigate } from "react-router-dom";
 import { useProject } from "@/hooks/useProjects";
-import {
-  deckSlides,
-  materialPalette,
-  sourcingProducts,
-  budgetCategories,
-  type DeckSlide,
-} from "@/data/deck-data";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { type DeckSlide, type SourcingProduct, type BudgetCategory } from "@/data/deck-data";
+import { ArrowLeft, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import AgentInputBar from "@/components/workspace/AgentInputBar";
+import { DesignerAgent, type RenderResult, type ProductResult } from "@/lib/designerAgent";
 
-/* ═══════════════════════════════════════════
-   SLIDE RENDERERS — each at 1920×1080 coords
-   ═══════════════════════════════════════════ */
+/* ── Auto-assemble slides from live data ── */
+
+interface LiveDeckData {
+  renders: RenderResult[];
+  products: ProductResult[];
+  brief: string | null;
+}
+
+function assembleSlides(project: any, data: LiveDeckData): DeckSlide[] {
+  const slides: DeckSlide[] = [];
+
+  // 1. Cover slide — always
+  slides.push({ id: "cover", type: "cover", label: "Cover", aiGenerated: false });
+
+  // 2. Brief slide — always
+  slides.push({ id: "brief", type: "brief", label: "Brief", aiGenerated: true });
+
+  // 3. Perspective slides — one per render
+  data.renders.forEach((r, i) => {
+    slides.push({
+      id: `perspective-${r.id}`,
+      type: "perspective",
+      label: r.label || `Perspective ${i + 1}`,
+      aiGenerated: true,
+    });
+  });
+
+  // 4. Floor plan — if dimensions exist
+  if (project.dimensions && project.dimensions !== "TBD") {
+    slides.push({ id: "floor-plan", type: "floor-plan", label: "Floor Plan", aiGenerated: false });
+  }
+
+  // 5. Sourcing — if products exist
+  if (data.products.length > 0) {
+    slides.push({ id: "sourcing", type: "sourcing", label: "Sourcing", aiGenerated: true });
+  }
+
+  // 6. Budget — if budget or products exist
+  if (project.budget || data.products.length > 0) {
+    slides.push({ id: "budget", type: "budget", label: "Budget", aiGenerated: true });
+  }
+
+  // 7. Next steps — always
+  slides.push({ id: "next-steps", type: "next-steps", label: "Next Steps", aiGenerated: true });
+
+  return slides;
+}
+
+/* ── Slide Renderers ── */
 
 const PlanLines = () => (
   <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
@@ -30,7 +71,7 @@ const PlanLines = () => (
   </svg>
 );
 
-const SlideContent = ({ slide, project }: { slide: DeckSlide; project: any }) => {
+const SlideContent = ({ slide, project, data }: { slide: DeckSlide; project: any; data: LiveDeckData }) => {
   switch (slide.type) {
     case "cover":
       return (
@@ -42,13 +83,15 @@ const SlideContent = ({ slide, project }: { slide: DeckSlide; project: any }) =>
             <div className="font-mono text-[22px] text-muted-foreground mt-[16px]">{project.room}</div>
           )}
           <div className="flex items-center gap-[32px] mt-[40px]">
-            {project.dimensions && (
+            {project.dimensions && project.dimensions !== "TBD" && (
               <span className="font-mono text-[18px] text-muted-foreground/60">{project.dimensions}</span>
             )}
             {project.budget && (
-              <span className="font-mono text-[18px] text-muted-foreground/60">${project.budget.toLocaleString()}</span>
+              <span className="font-mono text-[18px] text-muted-foreground/60">${project.budget}</span>
             )}
-            <span className="font-mono text-[18px] text-muted-foreground/40">March 2026</span>
+            <span className="font-mono text-[18px] text-muted-foreground/40">
+              {new Date().toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+            </span>
           </div>
           <div className="absolute top-[60px] right-[80px] font-mono text-[14px] text-muted-foreground/30 tracking-[0.15em]">
             clawd·studio
@@ -63,12 +106,11 @@ const SlideContent = ({ slide, project }: { slide: DeckSlide; project: any }) =>
             <div className="font-mono text-[14px] text-muted-foreground/40 tracking-[0.15em] uppercase mb-[40px]">Project Brief</div>
             <div className="space-y-[24px]">
               {[
-                ["Client", "Residential"],
-                ["Room", project.room || "Living Room"],
-                ["Dimensions", project.dimensions || "24ft × 16ft × 9ft"],
-                ["Budget", project.budget ? `$${project.budget.toLocaleString()}` : "$28,000"],
-                ["Layout", "L-shaped, 2 north-facing windows"],
-                ["Flooring", "Existing white oak hardwood"],
+                ["Client", project.project_type === "commercial" ? "Commercial" : "Residential"],
+                ["Room", project.room || "—"],
+                ["Dimensions", project.dimensions || "—"],
+                ["Budget", project.budget ? `$${project.budget}` : "—"],
+                ["Type", (project.project_type || "interior").charAt(0).toUpperCase() + (project.project_type || "interior").slice(1)],
               ].map(([k, v]) => (
                 <div key={k} className="flex items-baseline gap-[16px]">
                   <span className="font-mono text-[16px] text-muted-foreground/50 w-[140px] shrink-0">{k}</span>
@@ -80,25 +122,23 @@ const SlideContent = ({ slide, project }: { slide: DeckSlide; project: any }) =>
           <div className="flex-1">
             <div className="font-mono text-[14px] text-muted-foreground/40 tracking-[0.15em] uppercase mb-[40px]">Direction</div>
             <div className="font-sans text-[20px] leading-[1.6] text-foreground/80">
-              Japandi-inspired living space emphasizing natural materials, muted earth tones, and clean lines. Balance warmth with restraint — oak, linen, stone. Maximize natural light from north-facing windows.
-            </div>
-            <div className="flex gap-[12px] mt-[48px] flex-wrap">
-              {["Japandi", "Natural Materials", "Warm Minimal", "Earth Tones"].map((tag) => (
-                <span key={tag} className="px-[16px] py-[8px] font-mono text-[14px] text-muted-foreground" style={{ border: "1px solid rgba(0,0,0,0.1)" }}>
-                  {tag}
-                </span>
-              ))}
+              {data.brief || "Design brief pending — submit your vision in the workspace."}
             </div>
           </div>
         </div>
       );
 
-    case "perspective":
+    case "perspective": {
+      // Find the render for this slide
+      const renderIndex = data.renders.findIndex((r) => slide.id === `perspective-${r.id}`);
+      const render = data.renders[renderIndex];
       return (
         <div className="absolute inset-0" style={{
-          background: slide.id === "s3"
-            ? "linear-gradient(135deg, #c9c0b4 0%, #a89880 100%)"
-            : "linear-gradient(135deg, #d6cfc8 0%, #b0a89e 100%)",
+          background: render?.url
+            ? `url(${render.url}) center/cover`
+            : renderIndex % 2 === 0
+              ? "linear-gradient(135deg, #c9c0b4 0%, #a89880 100%)"
+              : "linear-gradient(135deg, #d6cfc8 0%, #b0a89e 100%)",
         }}>
           <div className="absolute bottom-[40px] left-[48px] flex items-center gap-[16px]">
             <span className="font-mono text-[14px] text-white/70">{project.name}</span>
@@ -106,6 +146,7 @@ const SlideContent = ({ slide, project }: { slide: DeckSlide; project: any }) =>
           </div>
         </div>
       );
+    }
 
     case "floor-plan":
       return (
@@ -114,69 +155,82 @@ const SlideContent = ({ slide, project }: { slide: DeckSlide; project: any }) =>
             <PlanLines />
           </div>
           <div className="flex items-center gap-[40px] mt-[32px]">
-            <span className="font-mono text-[16px] text-muted-foreground/50">24ft × 16ft</span>
-            <span className="font-mono text-[14px] text-muted-foreground/30">L-shaped layout</span>
-            <span className="font-mono text-[14px] text-muted-foreground/30">2 windows north</span>
+            <span className="font-mono text-[16px] text-muted-foreground/50">{project.dimensions}</span>
+            <span className="font-mono text-[14px] text-muted-foreground/30">{project.room || "Layout"}</span>
           </div>
         </div>
       );
 
-    case "palette":
-      return (
-        <div className="absolute inset-0 flex flex-col p-[80px]" style={{ background: "#fff" }}>
-          <div className="font-mono text-[14px] text-muted-foreground/40 tracking-[0.15em] uppercase mb-[60px]">Material Palette</div>
-          <div className="flex-1 flex items-center gap-[24px]">
-            {materialPalette.map((c) => (
-              <div key={c.name} className="flex-1 flex flex-col items-center">
-                <div className="w-full rounded-none" style={{ aspectRatio: "1", background: c.hex }} />
-                <span className="font-sans text-[16px] mt-[20px] text-foreground">{c.name}</span>
-                <span className="font-mono text-[13px] text-muted-foreground/40 mt-[4px]">{c.hex}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      );
-
-    case "sourcing":
+    case "sourcing": {
+      const displayProducts = data.products.slice(0, 3);
       return (
         <div className="absolute inset-0 flex flex-col p-[80px]" style={{ background: "#fff" }}>
           <div className="font-mono text-[14px] text-muted-foreground/40 tracking-[0.15em] uppercase mb-[60px]">Sourcing</div>
           <div className="flex-1 flex items-start gap-[40px]">
-            {sourcingProducts.map((p) => (
-              <div key={p.name} className="flex-1">
-                <div className="w-full" style={{ aspectRatio: "4/3", background: "linear-gradient(135deg, #e8e4e0 0%, #d1cbc4 100%)" }} />
+            {displayProducts.map((p) => (
+              <div key={p.id} className="flex-1">
+                <div className="w-full" style={{
+                  aspectRatio: "4/3",
+                  background: p.image
+                    ? `url(${p.image}) center/cover`
+                    : "linear-gradient(135deg, #e8e4e0 0%, #d1cbc4 100%)",
+                }} />
                 <div className="mt-[20px]">
                   <div className="font-sans text-[20px] font-medium">{p.name}</div>
                   <div className="flex items-center gap-[16px] mt-[8px]">
-                    <span className="font-mono text-[18px]">{p.price}</span>
+                    <span className="font-mono text-[18px]">${p.price.toLocaleString()}</span>
                     <span className="font-mono text-[14px] text-muted-foreground/50">{p.brand}</span>
                   </div>
                 </div>
               </div>
             ))}
+            {displayProducts.length === 0 && (
+              <div className="flex-1 flex items-center justify-center text-muted-foreground/40 font-mono text-[16px]">
+                No products sourced yet
+              </div>
+            )}
           </div>
         </div>
       );
+    }
 
-    case "budget":
+    case "budget": {
+      const totalSourced = data.products.reduce((sum, p) => sum + p.price, 0);
+      const budgetNum = project.budget ? parseFloat(String(project.budget).replace(/[^0-9.]/g, "")) : 0;
+      const budgetVal = budgetNum > 0 ? (String(project.budget).toLowerCase().includes("k") ? budgetNum * 1000 : budgetNum) : totalSourced * 1.5;
+
+      // Group products by category
+      const categoryMap: Record<string, number> = {};
+      for (const p of data.products) {
+        const cat = p.category || "Other";
+        categoryMap[cat] = (categoryMap[cat] || 0) + p.price;
+      }
+      const categories: BudgetCategory[] = Object.entries(categoryMap).map(([name, amount]) => ({
+        name: name.charAt(0).toUpperCase() + name.slice(1),
+        amount,
+      }));
+      const maxAmount = Math.max(...categories.map((c) => c.amount), 1);
+
       return (
         <div className="absolute inset-0 flex flex-col p-[80px]" style={{ background: "#fff" }}>
           <div className="font-mono text-[14px] text-muted-foreground/40 tracking-[0.15em] uppercase mb-[24px]">Budget Overview</div>
           <div className="flex items-baseline gap-[16px] mb-[60px]">
-            <span className="font-sans text-[48px] font-medium">$12,400</span>
-            <span className="font-mono text-[20px] text-muted-foreground/50">of $28,000 sourced</span>
+            <span className="font-sans text-[48px] font-medium">${totalSourced.toLocaleString()}</span>
+            <span className="font-mono text-[20px] text-muted-foreground/50">
+              {budgetVal > 0 ? `of $${budgetVal.toLocaleString()} sourced` : "total sourced"}
+            </span>
           </div>
-          {/* Progress bar */}
-          <div className="w-full h-[8px] bg-secondary mb-[60px]">
-            <div className="h-full bg-foreground" style={{ width: `${(12400 / 28000) * 100}%` }} />
-          </div>
-          {/* Breakdown */}
+          {budgetVal > 0 && (
+            <div className="w-full h-[8px] bg-secondary mb-[60px]">
+              <div className="h-full bg-foreground" style={{ width: `${Math.min(100, (totalSourced / budgetVal) * 100)}%` }} />
+            </div>
+          )}
           <div className="flex-1 space-y-[28px]">
-            {budgetCategories.map((cat) => (
+            {categories.map((cat) => (
               <div key={cat.name} className="flex items-center gap-[24px]">
                 <span className="font-sans text-[18px] w-[200px] shrink-0">{cat.name}</span>
                 <div className="flex-1 h-[6px] bg-secondary">
-                  <div className="h-full" style={{ width: `${(cat.amount / 5000) * 100}%`, background: "rgba(0,0,0,0.2)" }} />
+                  <div className="h-full" style={{ width: `${(cat.amount / maxAmount) * 100}%`, background: "rgba(0,0,0,0.2)" }} />
                 </div>
                 <span className="font-mono text-[16px] text-muted-foreground w-[100px] text-right">${cat.amount.toLocaleString()}</span>
               </div>
@@ -184,6 +238,7 @@ const SlideContent = ({ slide, project }: { slide: DeckSlide; project: any }) =>
           </div>
         </div>
       );
+    }
 
     case "next-steps":
       return (
@@ -191,9 +246,9 @@ const SlideContent = ({ slide, project }: { slide: DeckSlide; project: any }) =>
           <div className="font-mono text-[14px] text-muted-foreground/40 tracking-[0.15em] uppercase mb-[60px]">Next Steps</div>
           <div className="space-y-[48px]">
             {[
-              "Finalize accent chair selection — targeting 2 options under $800",
-              "Client review of Japandi direction — schedule walkthrough of perspectives",
-              "Source window treatments — linen Roman shades, north-facing light optimization",
+              data.renders.length > 0 ? "Review generated perspectives and select hero images" : "Submit a design brief to generate initial perspectives",
+              data.products.length > 0 ? `Finalize product selections — ${data.products.length} items sourced so far` : "Begin product sourcing based on approved design direction",
+              "Schedule client presentation walkthrough",
             ].map((step, i) => (
               <div key={i} className="flex items-start gap-[24px]">
                 <span className="font-mono text-[20px] text-muted-foreground/30 mt-[2px]">{String(i + 1).padStart(2, "0")}</span>
@@ -209,20 +264,13 @@ const SlideContent = ({ slide, project }: { slide: DeckSlide; project: any }) =>
   }
 };
 
-/* ═══════════════════
-   SCALED SLIDE
-   ═══════════════════ */
+/* ── Scaled Slide ── */
 
 const ScaledSlide = ({
-  slide,
-  project,
-  containerWidth,
-  containerHeight,
+  slide, project, data, containerWidth, containerHeight,
 }: {
-  slide: DeckSlide;
-  project: any;
-  containerWidth: number;
-  containerHeight: number;
+  slide: DeckSlide; project: any; data: LiveDeckData;
+  containerWidth: number; containerHeight: number;
 }) => {
   const BASE_W = 1920;
   const BASE_H = 1080;
@@ -230,51 +278,30 @@ const ScaledSlide = ({
 
   return (
     <div className="relative w-full h-full overflow-hidden">
-      <div
-        style={{
-          position: "absolute",
-          width: BASE_W,
-          height: BASE_H,
-          left: "50%",
-          top: "50%",
-          marginLeft: -BASE_W / 2,
-          marginTop: -BASE_H / 2,
-          transform: `scale(${scale})`,
-          transformOrigin: "center center",
-        }}
-      >
-        <SlideContent slide={slide} project={project} />
+      <div style={{
+        position: "absolute", width: BASE_W, height: BASE_H,
+        left: "50%", top: "50%",
+        marginLeft: -BASE_W / 2, marginTop: -BASE_H / 2,
+        transform: `scale(${scale})`, transformOrigin: "center center",
+      }}>
+        <SlideContent slide={slide} project={project} data={data} />
       </div>
     </div>
   );
 };
 
-/* ═══════════════════
-   THUMBNAIL
-   ═══════════════════ */
+/* ── Thumbnail ── */
 
 const SlideThumbnail = ({
-  slide,
-  project,
-  index,
-  active,
-  onClick,
+  slide, project, data, index, active, onClick,
 }: {
-  slide: DeckSlide;
-  project: any;
-  index: number;
-  active: boolean;
-  onClick: () => void;
+  slide: DeckSlide; project: any; data: LiveDeckData;
+  index: number; active: boolean; onClick: () => void;
 }) => (
-  <button
-    onClick={onClick}
-    className="w-full text-left group transition-all"
-    style={{
-      border: active ? "2px solid rgba(0,0,0,0.8)" : "2px solid transparent",
-    }}
-  >
+  <button onClick={onClick} className="w-full text-left group transition-all"
+    style={{ border: active ? "2px solid rgba(0,0,0,0.8)" : "2px solid transparent" }}>
     <div className="relative w-full overflow-hidden" style={{ aspectRatio: "16/9" }}>
-      <ScaledSlide slide={slide} project={project} containerWidth={240} containerHeight={135} />
+      <ScaledSlide slide={slide} project={project} data={data} containerWidth={240} containerHeight={135} />
     </div>
     <div className="flex items-center gap-2 mt-1.5 px-0.5 mb-4">
       <span className="font-mono text-[10px] text-muted-foreground/40">{String(index + 1).padStart(2, "0")}</span>
@@ -286,9 +313,7 @@ const SlideThumbnail = ({
   </button>
 );
 
-/* ═══════════════════
-   MAIN PAGE
-   ═══════════════════ */
+/* ── Main Page ── */
 
 const ProjectDeck = () => {
   const { id } = useParams();
@@ -298,12 +323,57 @@ const ProjectDeck = () => {
   const [hovered, setHovered] = useState(false);
   const [input, setInput] = useState("");
 
+  const [slides, setSlides] = useState<DeckSlide[]>([]);
+  const [liveData, setLiveData] = useState<LiveDeckData>({ renders: [], products: [], brief: null });
+  const [isLoadingData, setIsLoadingData] = useState(true);
+
+  // Load live data and assemble slides
+  useEffect(() => {
+    if (!id || !project) return;
+    setIsLoadingData(true);
+
+    Promise.all([
+      DesignerAgent.loadPersistedResults(id),
+      DesignerAgent.getProjectMessages(id),
+    ]).then(([results, messages]) => {
+      const renders = results?.renders || [];
+      const products = results?.products || [];
+
+      // Extract the original brief from user messages
+      const userMessages = messages.filter((m) => m.message_type === "user_message");
+      const brief = userMessages.length > 0 ? userMessages[0].content : null;
+
+      const data: LiveDeckData = { renders, products, brief };
+      setLiveData(data);
+      setSlides(assembleSlides(project, data));
+      setIsLoadingData(false);
+    }).catch((err) => {
+      console.error("Failed to load deck data:", err);
+      // Still show basic slides even on error
+      const data: LiveDeckData = { renders: [], products: [], brief: null };
+      setLiveData(data);
+      setSlides(assembleSlides(project, data));
+      setIsLoadingData(false);
+    });
+  }, [id, project]);
+
   if (isLoading) return <div className="h-screen flex items-center justify-center bg-background"><span className="font-mono text-[12px] text-muted-foreground animate-pulse">loading…</span></div>;
   if (!project) return <Navigate to="/" replace />;
 
-  const currentSlide = deckSlides[activeIndex];
+  if (isLoadingData) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <Loader2 size={20} className="animate-spin text-muted-foreground" />
+        <span className="ml-3 font-mono text-[12px] text-muted-foreground">Assembling deck…</span>
+      </div>
+    );
+  }
+
+  const currentSlide = slides[activeIndex];
+  if (!currentSlide) return null;
+
   const prev = () => setActiveIndex((i) => Math.max(0, i - 1));
-  const next = () => setActiveIndex((i) => Math.min(deckSlides.length - 1, i + 1));
+  const next = () => setActiveIndex((i) => Math.min(slides.length - 1, i + 1));
 
   return (
     <div className="h-screen flex flex-col bg-background">
@@ -325,8 +395,9 @@ const ProjectDeck = () => {
           </button>
           <button className="h-[30px] px-3 gallery-border text-[12px] font-medium hover:bg-secondary transition-colors">Export PDF</button>
           <div className="flex items-center gap-2 ml-2">
-            <span className="status-dot status-dot-active animate-pulse-dot" />
-            <span className="font-mono text-[11px] text-muted-foreground">agent</span>
+            <span className="font-mono text-[11px] text-muted-foreground">
+              {liveData.renders.length} renders · {liveData.products.length} products
+            </span>
           </div>
         </div>
       </header>
@@ -340,23 +411,8 @@ const ProjectDeck = () => {
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
         >
-          {/* Slide */}
-          <div
-            className="relative bg-background"
-            style={{
-              width: "82%",
-              aspectRatio: "16/9",
-              boxShadow: "0 2px 20px rgba(0,0,0,0.08)",
-            }}
-          >
-            <ScaledSlide
-              slide={currentSlide}
-              project={project}
-              containerWidth={960}
-              containerHeight={540}
-            />
-
-            {/* Hover edit overlay */}
+          <div className="relative bg-background" style={{ width: "82%", aspectRatio: "16/9", boxShadow: "0 2px 20px rgba(0,0,0,0.08)" }}>
+            <ScaledSlide slide={currentSlide} project={project} data={liveData} containerWidth={960} containerHeight={540} />
             {hovered && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/5 transition-opacity animate-fade-in">
                 <button className="px-3 py-1.5 bg-background text-[12px] font-medium gallery-border hover:bg-secondary transition-colors">
@@ -366,60 +422,38 @@ const ProjectDeck = () => {
             )}
           </div>
 
-          {/* Navigation */}
           <div className="flex items-center gap-4 mt-6">
             <button onClick={prev} className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-20" disabled={activeIndex === 0}>
               <ChevronLeft size={18} />
             </button>
-
             <div className="flex items-center gap-1.5">
-              {deckSlides.map((_, i) => (
-                <button
-                  key={i}
-                  onClick={() => setActiveIndex(i)}
-                  className="transition-all"
-                  style={{
-                    width: i === activeIndex ? 16 : 6,
-                    height: 6,
-                    background: i === activeIndex ? "rgba(0,0,0,0.7)" : "rgba(0,0,0,0.15)",
-                    borderRadius: 3,
-                  }}
-                />
+              {slides.map((_, i) => (
+                <button key={i} onClick={() => setActiveIndex(i)} className="transition-all"
+                  style={{ width: i === activeIndex ? 16 : 6, height: 6, background: i === activeIndex ? "rgba(0,0,0,0.7)" : "rgba(0,0,0,0.15)", borderRadius: 3 }} />
               ))}
             </div>
-
-            <button onClick={next} className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-20" disabled={activeIndex === deckSlides.length - 1}>
+            <button onClick={next} className="text-muted-foreground hover:text-foreground transition-colors disabled:opacity-20" disabled={activeIndex === slides.length - 1}>
               <ChevronRight size={18} />
             </button>
-
             <span className="font-mono text-[11px] text-muted-foreground/40 ml-2">
-              {activeIndex + 1} / {deckSlides.length}
+              {activeIndex + 1} / {slides.length}
             </span>
           </div>
         </div>
 
-        {/* Divider */}
         <div style={{ width: 1, background: "rgba(0,0,0,0.08)" }} />
 
         {/* RIGHT — Slide Manager */}
         <div className="flex-[35] flex flex-col min-h-0">
           <div className="px-4 py-3 flex items-center justify-between" style={{ borderBottom: "1px solid rgba(0,0,0,0.06)" }}>
-            <span className="font-mono text-[11px] text-muted-foreground">
-              {deckSlides.length} slides
-            </span>
-            <span className="font-mono text-[10px] text-muted-foreground/40">drag to reorder</span>
+            <span className="font-mono text-[11px] text-muted-foreground">{slides.length} slides</span>
+            <span className="font-mono text-[10px] text-muted-foreground/40">auto-assembled from project</span>
           </div>
 
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-0">
-            {deckSlides.map((slide, i) => (
-              <SlideThumbnail
-                key={slide.id}
-                slide={slide}
-                project={project}
-                index={i}
-                active={i === activeIndex}
-                onClick={() => setActiveIndex(i)}
-              />
+            {slides.map((slide, i) => (
+              <SlideThumbnail key={slide.id} slide={slide} project={project} data={liveData}
+                index={i} active={i === activeIndex} onClick={() => setActiveIndex(i)} />
             ))}
           </div>
 
@@ -434,19 +468,15 @@ const ProjectDeck = () => {
       {/* Bottom bar */}
       <div className="h-[44px] shrink-0 bg-background flex items-center px-5 gap-4" style={{ borderTop: "1px solid rgba(0,0,0,0.08)" }}>
         <div className="flex items-center gap-2 flex-1 min-w-0">
-          <span className="status-dot status-dot-agent animate-pulse-dot shrink-0" />
           <span className="font-mono text-[11px] text-muted-foreground truncate">
-            agent added Material Palette slide — sourcing accent chairs
+            {liveData.renders.length > 0 || liveData.products.length > 0
+              ? `Deck auto-assembled: ${liveData.renders.length} perspectives, ${liveData.products.length} products`
+              : "Submit a brief in the workspace to populate this deck"}
           </span>
         </div>
         <div style={{ width: 1, height: 20, background: "rgba(0,0,0,0.08)" }} />
         <div className="w-[280px]">
-          <AgentInputBar
-            input={input}
-            onInputChange={setInput}
-            onSubmit={(text) => { setInput(""); }}
-            inline
-          />
+          <AgentInputBar input={input} onInputChange={setInput} onSubmit={() => setInput("")} inline />
         </div>
       </div>
     </div>

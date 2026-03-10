@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams, Navigate, useNavigate } from "react-router-dom";
 import { useProject } from "@/hooks/useProjects";
-import { journalFeed, type JournalEntry } from "@/data/journal-data";
-import { ArrowLeft } from "lucide-react";
+import { type JournalEntry } from "@/data/journal-data";
+import { ArrowLeft, Loader2 } from "lucide-react";
 import AgentInputBar, { type Attachment } from "@/components/workspace/AgentInputBar";
+import { supabase } from "@/integrations/supabase/client";
 
 /* ── Visual placeholders (reused patterns) ── */
 
@@ -38,7 +39,10 @@ const renderGradients = [
 ];
 let gradientIdx = 0;
 
-const ImagePlaceholder = ({ style }: { style: "render" | "plan" | "sketch" }) => {
+const ImagePlaceholder = ({ style, imageUrl }: { style: "render" | "plan" | "sketch"; imageUrl?: string }) => {
+  if (imageUrl) {
+    return <img src={imageUrl} alt="Render" className="w-full" style={{ aspectRatio: "16/10", objectFit: "cover" }} />;
+  }
   if (style === "plan") {
     return (
       <div className="relative w-full" style={{ aspectRatio: "16/10", background: "#fafafa" }}>
@@ -113,9 +117,9 @@ const AgentCard = ({ entry }: { entry: JournalEntry }) => (
     </div>
 
     {/* Content */}
-    {entry.contentType === "image" && entry.imageStyle && (
+    {entry.contentType === "image" && (
       <div className="mt-3">
-        <ImagePlaceholder style={entry.imageStyle} />
+        <ImagePlaceholder style={entry.imageStyle || "render"} imageUrl={entry.imageUrl} />
       </div>
     )}
 
@@ -134,6 +138,93 @@ const AgentCard = ({ entry }: { entry: JournalEntry }) => (
   </div>
 );
 
+/* ── Map agent_messages to JournalEntry ── */
+
+interface AgentMessageRow {
+  id: string;
+  message_type: string;
+  content: string;
+  metadata: Record<string, unknown> | null;
+  created_at: string | null;
+}
+
+function mapMessageToJournalEntry(msg: AgentMessageRow): JournalEntry {
+  const time = msg.created_at
+    ? new Date(msg.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false })
+    : "";
+
+  const meta = (msg.metadata || {}) as Record<string, unknown>;
+
+  // User messages
+  if (msg.message_type === "user_message") {
+    return { id: msg.id, type: "user", time, text: msg.content };
+  }
+
+  // Result messages with renders
+  if (msg.message_type === "result" && meta.renders) {
+    const renders = meta.renders as Array<{ url?: string; label?: string }>;
+    const firstRender = renders[0];
+    return {
+      id: msg.id,
+      type: "agent",
+      time,
+      text: msg.content,
+      contentType: "image",
+      imageStyle: "render",
+      imageUrl: firstRender?.url,
+    };
+  }
+
+  // Result messages with products
+  if (msg.message_type === "result" && meta.products) {
+    const products = meta.products as Array<{ name?: string; price?: number; brand?: string }>;
+    const firstProduct = products[0];
+    if (firstProduct) {
+      return {
+        id: msg.id,
+        type: "agent",
+        time,
+        text: msg.content,
+        contentType: "product",
+        productName: firstProduct.name || "Product",
+        productPrice: firstProduct.price ? `$${firstProduct.price.toLocaleString()}` : "",
+        productSource: firstProduct.brand || "",
+      };
+    }
+  }
+
+  // Coordination messages (agent spawning)
+  if (msg.message_type === "coordination") {
+    return { id: msg.id, type: "system", time, text: msg.content };
+  }
+
+  // Status updates — detect image-related content
+  const content = msg.content.toLowerCase();
+  let contentType: "image" | "product" | "analysis" | "none" = "none";
+  let imageStyle: "render" | "plan" | "sketch" | undefined;
+
+  if (content.includes("render") || content.includes("perspective") || content.includes("generated")) {
+    contentType = "image";
+    imageStyle = "render";
+  } else if (content.includes("plan") || content.includes("layout")) {
+    contentType = "image";
+    imageStyle = "plan";
+  } else if (content.includes("found") && content.includes("$")) {
+    contentType = "product";
+  } else if (content.includes("analyz") || content.includes("brief")) {
+    contentType = "analysis";
+  }
+
+  return {
+    id: msg.id,
+    type: "agent",
+    time,
+    text: msg.content,
+    contentType,
+    imageStyle,
+  };
+}
+
 /* ── Main Page ── */
 
 const ProjectJournal = () => {
@@ -142,13 +233,49 @@ const ProjectJournal = () => {
   const { data: project, isLoading } = useProject(id);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
-  const [entries, setEntries] = useState(journalFeed);
+  const [entries, setEntries] = useState<JournalEntry[]>([]);
+  const [isLoadingMessages, setIsLoadingMessages] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Fetch live agent_messages from Supabase
+  useEffect(() => {
+    if (!id) return;
+    setIsLoadingMessages(true);
+    setLoadError(null);
+
+    supabase
+      .from("agent_messages")
+      .select("*")
+      .eq("project_id", id)
+      .order("created_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (error) {
+          console.error("Failed to load journal messages:", error);
+          setLoadError("Failed to load journal entries");
+          setIsLoadingMessages(false);
+          return;
+        }
+
+        if (data && data.length > 0) {
+          const mapped = (data as AgentMessageRow[]).map(mapMessageToJournalEntry);
+          setEntries(mapped);
+        } else {
+          setEntries([{
+            id: "empty",
+            type: "system",
+            time: "",
+            text: "No activity yet — submit a brief in the workspace to get started",
+          }]);
+        }
+        setIsLoadingMessages(false);
+      });
+  }, [id]);
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, []);
+  }, [entries]);
 
   if (isLoading) return <div className="h-screen flex items-center justify-center bg-background"><span className="font-mono text-[12px] text-muted-foreground animate-pulse">loading…</span></div>;
   if (!project) return <Navigate to="/" replace />;
@@ -171,7 +298,7 @@ const ProjectJournal = () => {
   };
 
   const suggestions = ["Generate section view", "Client hates yellow", "Find dining chairs"];
-  const folderCount = project.folders?.reduce((sum, f) => sum + f.count, 0) ?? 0;
+  const folderCount = project.folders?.reduce((sum: number, f: { count: number }) => sum + f.count, 0) ?? 0;
   const folderCategories = project.folders?.length ?? 0;
 
   return (
@@ -222,20 +349,31 @@ const ProjectJournal = () => {
       {/* Feed */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto">
         <div className="max-w-[800px] mx-auto px-6 pb-32">
-          {entries.map((entry) => {
-            switch (entry.type) {
-              case "system":
-                return <SystemCard key={entry.id} entry={entry} />;
-              case "user":
-                return <UserCard key={entry.id} entry={entry} />;
-              case "upload":
-                return <UploadCard key={entry.id} entry={entry} />;
-              case "agent":
-                return <AgentCard key={entry.id} entry={entry} />;
-              default:
-                return null;
-            }
-          })}
+          {isLoadingMessages ? (
+            <div className="flex items-center justify-center py-20">
+              <Loader2 size={20} className="animate-spin text-muted-foreground" />
+              <span className="ml-3 font-mono text-[12px] text-muted-foreground">Loading journal…</span>
+            </div>
+          ) : loadError ? (
+            <div className="flex items-center justify-center py-20">
+              <span className="font-mono text-[12px] text-destructive">{loadError}</span>
+            </div>
+          ) : (
+            entries.map((entry) => {
+              switch (entry.type) {
+                case "system":
+                  return <SystemCard key={entry.id} entry={entry} />;
+                case "user":
+                  return <UserCard key={entry.id} entry={entry} />;
+                case "upload":
+                  return <UploadCard key={entry.id} entry={entry} />;
+                case "agent":
+                  return <AgentCard key={entry.id} entry={entry} />;
+                default:
+                  return null;
+              }
+            })
+          )}
         </div>
       </div>
 

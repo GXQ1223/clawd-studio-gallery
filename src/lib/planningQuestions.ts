@@ -1,7 +1,27 @@
+import { supabase } from "@/integrations/supabase/client";
 import type { PlanningQuestion } from "@/components/workspace/PlanningQuestions";
 
-/** Generate contextual discovery questions based on the user's initial brief */
-export function generatePlanningQuestions(brief: string): PlanningQuestion[] {
+/** Generate contextual discovery questions via LLM, with rule-based fallback */
+export async function generatePlanningQuestions(brief: string): Promise<PlanningQuestion[]> {
+  try {
+    const { data, error } = await supabase.functions.invoke("generate-questions", {
+      body: { brief },
+    });
+
+    if (error) throw error;
+    if (!data?.success || !Array.isArray(data?.questions) || data.questions.length === 0) {
+      throw new Error("Invalid or empty questions response");
+    }
+
+    return data.questions as PlanningQuestion[];
+  } catch (err) {
+    console.warn("LLM question generation failed, using rule-based fallback:", err);
+    return generateFallbackQuestions(brief);
+  }
+}
+
+/** Synchronous rule-based fallback for when the LLM is unavailable */
+export function generateFallbackQuestions(brief: string): PlanningQuestion[] {
   const lower = brief.toLowerCase();
   const questions: PlanningQuestion[] = [];
 
@@ -69,16 +89,13 @@ export function generatePlanningQuestions(brief: string): PlanningQuestion[] {
 
 /** Compose a comprehensive prompt from brief + answers for image generation */
 export function composeFinalPrompt(originalBrief: string, answers: Record<string, string>): string {
-  const parts: string[] = [];
+  const parts: string[] = [originalBrief];
 
-  parts.push(originalBrief);
-
-  if (answers.room) parts.push(`Space: ${answers.room}`);
-  if (answers.size) parts.push(`Size: ${answers.size}`);
-  if (answers.style) parts.push(`Style: ${answers.style}`);
-  if (answers.function) parts.push(`Function: ${answers.function}`);
-  if (answers.budget) parts.push(`Budget: ${answers.budget}`);
-  if (answers.special) parts.push(`Special requirements: ${answers.special}`);
+  for (const [key, value] of Object.entries(answers)) {
+    if (value) {
+      parts.push(`${key}: ${value}`);
+    }
+  }
 
   return parts.join(". ") + ".";
 }

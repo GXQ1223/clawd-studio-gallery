@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import type { FeedEntry } from "@/data/workspace-data";
 import type { OrchestrationResult } from "@/lib/designerAgent";
 import AgentInputBar, { type Attachment } from "./AgentInputBar";
 import PlanningQuestions, { type PlanningQuestion } from "./PlanningQuestions";
+import RenderAnnotation, { type Annotation } from "./RenderAnnotation";
+import FurnitureCompositor, { type PlacedFurniture } from "./FurnitureCompositor";
 
 interface Props {
   feed: FeedEntry[];
@@ -12,6 +14,7 @@ interface Props {
   onKeepImage?: (render: { id: string; url: string; label: string }) => void;
   onDeleteImage?: (id: string) => void;
   onRefineImage?: (render: { id: string; url: string; label: string }) => void;
+  onAnnotateImage?: (renderId: string, x: number, y: number, text: string) => void;
   acknowledgment?: string | null;
   planningQuestions?: PlanningQuestion[] | null;
   onCompletePlanning?: (answers: Record<string, string>) => void;
@@ -19,9 +22,29 @@ interface Props {
   onClose?: () => void;
 }
 
-const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteImage, onRefineImage, acknowledgment, planningQuestions, onCompletePlanning, isDrawer, onClose }: Props) => {
+const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteImage, onRefineImage, onAnnotateImage, acknowledgment, planningQuestions, onCompletePlanning, isDrawer, onClose }: Props) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [input, setInput] = useState("");
+  const [annotatingRender, setAnnotatingRender] = useState<{ id: string; url: string; label: string } | null>(null);
+  const [annotations, setAnnotations] = useState<Record<string, Annotation[]>>({});
+  const [compositingRender, setCompositingRender] = useState<{ id: string; url: string; label: string } | null>(null);
+  const [furniturePlacements, setFurniturePlacements] = useState<Record<string, PlacedFurniture[]>>({});
+
+  const handleAddAnnotation = useCallback((x: number, y: number, text: string) => {
+    if (!annotatingRender) return;
+    const annotation: Annotation = {
+      id: `ann-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      x,
+      y,
+      text,
+      createdAt: new Date().toISOString(),
+    };
+    setAnnotations((prev) => ({
+      ...prev,
+      [annotatingRender.id]: [...(prev[annotatingRender.id] || []), annotation],
+    }));
+    onAnnotateImage?.(annotatingRender.id, x, y, text);
+  }, [annotatingRender, onAnnotateImage]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -134,6 +157,14 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteIm
                     {onKeepImage && (
                       <button onClick={() => onKeepImage(r)} className="px-2 py-1 bg-white/90 text-foreground text-[9px] font-mono hover:bg-white transition-colors">Keep</button>
                     )}
+                    <button onClick={() => setAnnotatingRender(r)} className="px-2 py-1 bg-white/90 text-foreground text-[9px] font-mono hover:bg-white transition-colors">
+                      Annotate{annotations[r.id]?.length ? ` (${annotations[r.id].length})` : ""}
+                    </button>
+                    {results && results.products.length > 0 && (
+                      <button onClick={() => setCompositingRender(r)} className="px-2 py-1 bg-white/90 text-foreground text-[9px] font-mono hover:bg-white transition-colors">
+                        Compose{furniturePlacements[r.id]?.length ? ` (${furniturePlacements[r.id].length})` : ""}
+                      </button>
+                    )}
                     {onRefineImage && (
                       <button onClick={() => onRefineImage(r)} className="px-2 py-1 bg-white/90 text-foreground text-[9px] font-mono hover:bg-white transition-colors">Refine</button>
                     )}
@@ -183,6 +214,34 @@ const AgentFeed = ({ feed, onSubmit, isWorking, results, onKeepImage, onDeleteIm
             compact
           />
         </div>
+      )}
+
+      {/* Annotation modal */}
+      {annotatingRender && (
+        <RenderAnnotation
+          renderUrl={annotatingRender.url}
+          renderLabel={annotatingRender.label}
+          annotations={annotations[annotatingRender.id] || []}
+          onAddAnnotation={handleAddAnnotation}
+          onClose={() => setAnnotatingRender(null)}
+        />
+      )}
+
+      {/* Furniture compositor modal */}
+      {compositingRender && results && (
+        <FurnitureCompositor
+          renderUrl={compositingRender.url}
+          renderLabel={compositingRender.label}
+          products={results.products}
+          placements={furniturePlacements[compositingRender.id] || []}
+          onUpdatePlacements={(placements) => {
+            setFurniturePlacements((prev) => ({
+              ...prev,
+              [compositingRender.id]: placements,
+            }));
+          }}
+          onClose={() => setCompositingRender(null)}
+        />
       )}
     </aside>
   );

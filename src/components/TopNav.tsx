@@ -11,9 +11,18 @@ const TopNav = () => {
   const navigate = useNavigate();
   const { signOut } = useAuth();
 
+  const tabRoutes: Record<string, string> = {
+    Projects: "/",
+    Library: "/library",
+    Inspiration: "/inspiration",
+    Sourcing: "/sourcing",
+    Compare: "/mvp",
+  };
+
   const handleTabClick = (tab: string) => {
     setActiveTab(tab);
-    if (tab === "Compare") navigate("/mvp");
+    const route = tabRoutes[tab];
+    if (route) navigate(route);
   };
 
   return (

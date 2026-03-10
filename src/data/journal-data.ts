@@ -12,6 +12,7 @@ export interface JournalEntry {
   /** Agent-specific */
   contentType?: AgentContentType;
   imageStyle?: ImageStyle;
+  imageUrl?: string;
   /** Product-specific */
   productName?: string;
   productPrice?: string;

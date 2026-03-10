@@ -13,6 +13,11 @@ import ProjectWall from "./pages/ProjectWall";
 import ProjectDeck from "./pages/ProjectDeck";
 import NotFound from "./pages/NotFound";
 import MvpCompare from "./pages/MvpCompare";
+import SharedProject from "./pages/SharedProject";
+import Library from "./pages/Library";
+import Inspiration from "./pages/Inspiration";
+import Sourcing from "./pages/Sourcing";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 const queryClient = new QueryClient();
 
@@ -23,16 +28,22 @@ const App = () => (
         <Toaster />
         <Sonner />
         <BrowserRouter>
-          <Routes>
-            <Route path="/auth" element={<Auth />} />
-            <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
-            <Route path="/project/:id" element={<ProtectedRoute><ProjectWorkspace /></ProtectedRoute>} />
-            <Route path="/workspace/journal/:id" element={<ProtectedRoute><ProjectJournal /></ProtectedRoute>} />
-            <Route path="/workspace/wall/:id" element={<ProtectedRoute><ProjectWall /></ProtectedRoute>} />
-            <Route path="/workspace/deck/:id" element={<ProtectedRoute><ProjectDeck /></ProtectedRoute>} />
-            <Route path="/mvp" element={<MvpCompare />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/auth" element={<Auth />} />
+              <Route path="/" element={<ProtectedRoute><ErrorBoundary><Index /></ErrorBoundary></ProtectedRoute>} />
+              <Route path="/library" element={<ProtectedRoute><ErrorBoundary><Library /></ErrorBoundary></ProtectedRoute>} />
+              <Route path="/inspiration" element={<ProtectedRoute><ErrorBoundary><Inspiration /></ErrorBoundary></ProtectedRoute>} />
+              <Route path="/sourcing" element={<ProtectedRoute><ErrorBoundary><Sourcing /></ErrorBoundary></ProtectedRoute>} />
+              <Route path="/project/:id" element={<ProtectedRoute><ErrorBoundary><ProjectWorkspace /></ErrorBoundary></ProtectedRoute>} />
+              <Route path="/workspace/journal/:id" element={<ProtectedRoute><ErrorBoundary><ProjectJournal /></ErrorBoundary></ProtectedRoute>} />
+              <Route path="/workspace/wall/:id" element={<ProtectedRoute><ErrorBoundary><ProjectWall /></ErrorBoundary></ProtectedRoute>} />
+              <Route path="/workspace/deck/:id" element={<ProtectedRoute><ErrorBoundary><ProjectDeck /></ErrorBoundary></ProtectedRoute>} />
+              <Route path="/share/:token" element={<ErrorBoundary><SharedProject /></ErrorBoundary>} />
+              <Route path="/mvp" element={<ErrorBoundary><MvpCompare /></ErrorBoundary>} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </ErrorBoundary>
         </BrowserRouter>
       </TooltipProvider>
     </AuthProvider>

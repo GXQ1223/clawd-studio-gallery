@@ -1,0 +1,136 @@
+# Clawd Studio Gallery — Task List
+# Generated from Manus AI Codebase Analysis Report (March 6, 2026)
+# Status: [ ] = todo, [x] = done, [~] = in progress
+
+## Phase 1: Wire Real AI (Critical Priority)
+
+- [x] 1. Replace mock-render edge function with real image generation API (Stability AI / DALL-E 3 / Replicate SD XL)
+  - Update supabase/functions/mock-render/index.ts to call a real image generation API
+  - Construct architectural prompts from brief analysis (style, space type, materials, lighting, camera angle)
+  - Upload generated images to Supabase Storage instead of returning Unsplash URLs
+  - Return stored Supabase URLs
+
+- [x] 2. Replace regex-based brief analysis with LLM call (Claude / GPT-4)
+  - Replace analyzeBrief() in src/lib/designerAgent.ts with an LLM API call
+  - Extract structured JSON: project type, style, dimensions, budget, preferences, materials, lighting, deliverables
+  - Use structured output to drive specialist agent planning
+
+- [x] 3. Replace rule-based planning questions with LLM-generated contextual questions
+  - Update src/lib/planningQuestions.ts to call an LLM
+  - Generate non-redundant questions based on what's already known from the brief
+  - Only ask questions that would meaningfully change generated output
+
+- [x] 4. Re-enable JWT verification on all edge functions (security critical)
+  - Update supabase/config.toml to set verify_jwt = true for mock-render, mock-sourcing, agent-cron
+  - Add JWT validation logic inside each edge function
+  - Test authenticated calls from the client
+
+## Phase 2: Data Persistence (High Priority)
+
+- [x] 5. Persist render results to Supabase Storage + database
+  - Create a renders table or use result_data JSONB on agent_sessions
+  - Store generated images in Supabase Storage
+  - Load persisted renders on workspace page reload
+
+- [x] 6. Persist conversation history across sessions
+  - Save conversation to agent_messages table instead of ephemeral React ref
+  - Rehydrate conversation history from agent_messages on workspace load
+  - Maintain multi-turn context across page reloads
+
+- [x] 7. Add project_type column to projects table and use in agent prompts
+  - Add project_type column to Supabase projects table
+  - Store project type from NewProjectModal
+  - Pass project type to agent for discipline-specific behavior
+
+- [x] 8. Wire attachment images to render agent as style references
+  - Pass user-uploaded attachments from AgentInputBar to the render agent
+  - Use reference images as style guidance for image generation
+  - Stop ignoring _attachments parameter in handleAgentSubmit
+
+## Phase 3: Connect Live Views (High Priority)
+
+- [x] 9. Connect Journal view to live agent_messages data
+  - Replace static journalFeed from journal-data.ts with Supabase query
+  - Query agent_messages ordered by created_at
+  - Render rich content cards (image thumbnails, product cards, system messages)
+  - Add loading and error states
+
+- [x] 10. Connect Wall view to live assets with drag persistence
+  - Replace static wallAssets from wall-data.ts with actual kept assets
+  - Implement drag-to-position on freeform canvas
+  - Persist positions to a wall_layouts table or JSONB column
+  - Add loading and error states
+
+- [x] 11. Auto-assemble Deck from live project content
+  - Replace static deckSlides from deck-data.ts with real project data
+  - Generate slides from: brief summary, best renders, floor plan, material palette, sourcing list, budget
+  - Persist slides to a deck_slides table
+  - Add loading and error states
+
+## Phase 4: Product Sourcing & Real-Time (Medium Priority)
+
+- [x] 12. Replace mock-sourcing with real product API integration
+  - Integrate with retailer APIs (Wayfair, 1stDibs, etc.) or build product index
+  - Implement style-based vector search for product matching
+  - Filter by dimensions, finish, price, and budget constraints
+
+- [x] 13. Enable Supabase Realtime on agent feed
+  - Subscribe to agent_messages and agent_sessions changes
+  - Update AgentFeed in real-time without polling
+  - Support multiple team members viewing activity simultaneously
+
+- [x] 14. Set up actual cron scheduler for agent-cron function
+  - Configure pg_cron or external scheduler to call agent-cron edge function
+  - Replace manual trigger with automated schedule
+  - Support hourly, 6-hour, and daily intervals
+
+## Phase 5: Code Quality & Stability (Medium Priority)
+
+- [x] 15. Add React error boundaries
+  - Wrap major page components in error boundaries
+  - Prevent full app crash on rendering errors
+  - Show user-friendly error states
+
+- [x] 16. Fix TypeScript `as any` casts
+  - Resolve type mismatches in useProjects.ts, designerAgent.ts, ProjectWorkspace.tsx
+  - Replace `as any` and `as unknown as T` with proper typing
+  - Align Supabase-generated types with domain types
+
+- [x] 17. Split MvpCompare.tsx into separate component files
+  - Extract StudioView, JournalView, WallView, DeckView into own files
+  - Extract customize modal and transition animation
+  - Reduce monolithic 600+ line file
+
+- [x] 18. Remove dead code and hardcoded data
+  - Remove unused src/data/projects.ts (DB is source of truth)
+  - Clean up hardcoded project data
+  - Add .env.example and ensure .env is in .gitignore
+
+- [x] 19. Add comprehensive test coverage
+  - Unit tests for DesignerAgent class
+  - Integration tests for Supabase hooks
+  - Component tests for workspace UI
+  - Replace trivial placeholder test
+
+## Phase 6: Collaboration & Sharing (Lower Priority)
+
+- [x] 20. Implement project sharing / client view
+  - Add share_token column to projects table
+  - Create public /share/:token route with read-only view
+  - Wire the existing Share button in workspace top bar
+
+- [x] 21. Wire up non-functional navigation tabs
+  - Implement Library, Inspiration, and Sourcing nav tabs in TopNav
+  - Add routing and content for each tab
+
+- [x] 22. Add comments and annotations on renders
+  - Allow clients to mark up images in the browser
+  - Capture feedback as agent_messages of type user_message
+
+## Phase 7: Advanced Capabilities (Future)
+
+- [x] 23. ControlNet floor plan conditioning for spatially accurate renders
+- [x] 24. Style transfer from reference images using CLIP embeddings
+- [x] 25. Furniture placement compositing in renders
+- [x] 26. Automated PDF specification sheet generation
+- [x] 27. BIM integration (IFC file read/write for Revit, ArchiCAD)

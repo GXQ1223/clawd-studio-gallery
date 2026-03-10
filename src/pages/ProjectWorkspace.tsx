@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useParams, Navigate, useNavigate } from "react-router-dom";
-import { useProject, useUpdateProject } from "@/hooks/useProjects";
+import { useProject, useUpdateProject, type Project } from "@/hooks/useProjects";
+import { useAuth } from "@/hooks/useAuth";
 import type { Asset } from "@/data/workspace-data";
 import ProjectBrief from "@/components/workspace/ProjectBrief";
 import AssetGallery from "@/components/workspace/AssetGallery";
@@ -9,20 +10,25 @@ import OnboardingOverlay from "@/components/workspace/OnboardingOverlay";
 import EmptyBriefPrompt from "@/components/workspace/EmptyBriefPrompt";
 import { useDesignerAgent } from "@/hooks/useDesignerAgent";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import type { Attachment } from "@/components/workspace/AgentInputBar";
+import ExportPdf from "@/components/workspace/ExportPdf";
+import ExportIfc from "@/components/workspace/ExportIfc";
 
 const ProjectWorkspace = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { data: project, isLoading } = useProject(id);
   const updateProject = useUpdateProject();
+  const { user } = useAuth();
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
   const [briefCollapsed, setBriefCollapsed] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [hasStarted, setHasStarted] = useState(false);
   const [keptAssets, setKeptAssets] = useState<Asset[]>([]);
   const [deletedRenderIds, setDeletedRenderIds] = useState<Set<string>>(new Set());
-  const { runOrchestration, completePlanning, isAnalyzing, results, feedEntries, acknowledgment, planningQuestions, sessions, toggleCron, refreshSessions } = useDesignerAgent(id || "");
+  const [sharing, setSharing] = useState(false);
+  const { runOrchestration, completePlanning, isAnalyzing, results, feedEntries, acknowledgment, planningQuestions, sessions, toggleCron, refreshSessions } = useDesignerAgent(id || "", project?.project_type);
 
   // Submit from empty brief prompt or chat
   const handleBriefSubmit = useCallback((brief: string) => {
@@ -32,12 +38,37 @@ const ProjectWorkspace = () => {
   }, [runOrchestration]);
 
   const handleAgentSubmit = useCallback(
-    (text: string, _attachments: Attachment[]) => {
-      if (!text.trim() && _attachments.length === 0) return;
+    async (text: string, attachments: Attachment[]) => {
+      if (!text.trim() && attachments.length === 0) return;
       const brief = text || "Modern design with renders and furniture sourcing";
-      runOrchestration(brief);
+
+      // Upload attachments to Supabase Storage and collect public URLs
+      const referenceImageUrls: string[] = [];
+      if (attachments.length > 0 && id) {
+        for (const att of attachments) {
+          try {
+            const ext = att.file.name.split(".").pop() || "png";
+            const filePath = `${id}/references/${Date.now()}-${att.id}.${ext}`;
+            const { error } = await supabase.storage
+              .from("project-assets")
+              .upload(filePath, att.file, { contentType: att.file.type });
+            if (error) throw error;
+            const { data: urlData } = supabase.storage
+              .from("project-assets")
+              .getPublicUrl(filePath);
+            referenceImageUrls.push(urlData.publicUrl);
+          } catch (err) {
+            console.error("Failed to upload reference image:", err);
+          }
+        }
+        if (referenceImageUrls.length > 0) {
+          toast(`Uploaded ${referenceImageUrls.length} reference image(s)`);
+        }
+      }
+
+      runOrchestration(brief, referenceImageUrls);
     },
-    [runOrchestration]
+    [runOrchestration, id]
   );
 
   const handleCompletePlanning = useCallback((answers: Record<string, string>) => {
@@ -50,7 +81,7 @@ const ProjectWorkspace = () => {
     const currentFolders = (project.folders || []) as { name: string; count: number }[];
     if (currentFolders.some((f) => f.name === type)) return;
     const newFolders = [...currentFolders, { name: type, count: 0 }];
-    updateProject.mutate({ id, folders: newFolders as any });
+    updateProject.mutate({ id, folders: newFolders });
     toast(`✦ ${type} output added`);
   }, [project, id, updateProject]);
 
@@ -89,6 +120,36 @@ const ProjectWorkspace = () => {
     setChatOpen(true);
     runOrchestration(`Refine this ${asset.category}: "${asset.name}"`);
   }, [runOrchestration]);
+
+  const handleAnnotateImage = useCallback(async (renderId: string, x: number, y: number, text: string) => {
+    if (!id) return;
+    await supabase.from("agent_messages").insert({
+      project_id: id,
+      message_type: "user_message",
+      content: `Annotation on render: "${text}"`,
+      metadata: { annotation: true, render_id: renderId, x, y },
+      user_id: user?.id || null,
+    });
+  }, [id, user?.id]);
+
+  const handleShare = useCallback(async () => {
+    if (!project || !id) return;
+    setSharing(true);
+    try {
+      let token = project.share_token;
+      if (!token) {
+        token = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+        await updateProject.mutateAsync({ id, share_token: token } as Partial<Project> & { id: string });
+      }
+      const shareUrl = `${window.location.origin}/share/${token}`;
+      await navigator.clipboard.writeText(shareUrl);
+      toast("Share link copied to clipboard");
+    } catch {
+      toast.error("Failed to generate share link");
+    } finally {
+      setSharing(false);
+    }
+  }, [project, id, updateProject]);
 
   if (isLoading) {
     return (
@@ -157,7 +218,22 @@ const ProjectWorkspace = () => {
           >
             ✦ Assistant
           </button>
-          <button className="h-[30px] px-3 gallery-border text-[12px] font-medium hover:bg-secondary transition-colors">Share</button>
+          <ExportPdf
+            projectName={project.name}
+            projectType={project.project_type}
+            budget={project.budget}
+            dimensions={project.dimensions}
+            results={filteredResults}
+          />
+          <ExportIfc
+            projectName={project.name}
+            projectType={project.project_type}
+            dimensions={project.dimensions}
+            results={filteredResults}
+          />
+          <button onClick={handleShare} disabled={sharing} className="h-[30px] px-3 gallery-border text-[12px] font-medium hover:bg-secondary transition-colors disabled:opacity-50">
+            {sharing ? "Sharing…" : "Share"}
+          </button>
           <div className="flex items-center gap-2 ml-2">
             <span className={`status-dot ${isAnalyzing ? "status-dot-agent animate-pulse-dot" : "status-dot-active"}`} />
             <span className="font-mono text-[11px] text-muted-foreground">
@@ -215,6 +291,7 @@ const ProjectWorkspace = () => {
             onKeepImage={handleKeepImage}
             onDeleteImage={handleDeleteImage}
             onRefineImage={handleRefineImage}
+            onAnnotateImage={handleAnnotateImage}
             acknowledgment={acknowledgment}
             planningQuestions={planningQuestions}
             onCompletePlanning={handleCompletePlanning}

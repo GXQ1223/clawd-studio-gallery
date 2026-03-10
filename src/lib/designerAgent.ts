@@ -73,6 +73,10 @@ interface BriefAnalysis {
   timeline: string;
   providedAssets: string[];
   requiredDeliverables: string[];
+  materials: string[];
+  lighting: string | null;
+  dimensions: string | null;
+  clientPreferences: string[];
 }
 
 /**
@@ -83,17 +87,23 @@ interface BriefAnalysis {
 export class DesignerAgent {
   private onProgress?: (msg: string) => void;
   private userId?: string;
+  private projectType: string;
+  private referenceImageUrls: string[];
+  private floorPlanUrl: string | null;
 
   private conversationHistory: string[];
 
   constructor(
     public projectId: string,
     public userBrief: string,
-    opts?: { onProgress?: (msg: string) => void; userId?: string; conversationHistory?: string[] }
+    opts?: { onProgress?: (msg: string) => void; userId?: string; conversationHistory?: string[]; projectType?: string; referenceImageUrls?: string[]; floorPlanUrl?: string }
   ) {
     this.onProgress = opts?.onProgress;
     this.userId = opts?.userId;
     this.conversationHistory = opts?.conversationHistory || [];
+    this.projectType = opts?.projectType || "interior";
+    this.referenceImageUrls = opts?.referenceImageUrls || [];
+    this.floorPlanUrl = opts?.floorPlanUrl || null;
   }
 
   private emit(msg: string) {
@@ -112,7 +122,7 @@ export class DesignerAgent {
     this.emit(`${agents.length} specialists spawned`);
 
     // Execute render agent
-    this.emit("Generating renders via intdesign.ai…");
+    this.emit(this.floorPlanUrl ? "Generating spatially-conditioned renders…" : "Generating renders via intdesign.ai…");
     const renders = await this.executeRenderAgent(analysis);
     this.emit(`${renders.length} perspectives generated`);
 
@@ -121,9 +131,15 @@ export class DesignerAgent {
     const sourcingResult = await this.executeSourcingAgent(analysis);
     this.emit(`${sourcingResult.products.length} products found — $${sourcingResult.shoppingList.total.toLocaleString()} total`);
 
-    // Mark all agents completed
+    // Mark all agents completed and persist results
     for (const agent of agents) {
-      await DesignerAgent.updateSessionStatus(agent.id, "completed");
+      let resultData: Record<string, unknown> | undefined;
+      if (agent.agent_type === "render" || agent.agent_type === "3d") {
+        resultData = { renders, style: analysis.style };
+      } else if (agent.agent_type === "sourcing") {
+        resultData = { products: sourcingResult.products, shoppingList: sourcingResult.shoppingList, style: analysis.style, budget: analysis.budget };
+      }
+      await DesignerAgent.updateSessionStatus(agent.id, "completed", resultData);
     }
     this.emit("All agents completed ✦");
 
@@ -133,14 +149,29 @@ export class DesignerAgent {
   /** Call mock-render edge function */
   private async executeRenderAgent(analysis: BriefAnalysis): Promise<RenderResult[]> {
     try {
+      if (this.floorPlanUrl) {
+        this.emit("Using floor plan for spatially-conditioned rendering (ControlNet)…");
+      }
+
       const { data, error } = await supabase.functions.invoke("mock-render", {
         body: {
           style: analysis.style || "contemporary",
           description: this.userBrief,
           project_id: this.projectId,
+          project_type: this.projectType,
+          reference_image_urls: this.referenceImageUrls,
+          floor_plan_url: this.floorPlanUrl,
         },
       });
       if (error) throw error;
+
+      if (data.floor_plan_conditioned) {
+        this.emit("Renders conditioned on floor plan layout ✦");
+      }
+      if (data.style_transferred && data.style_summary) {
+        this.emit(`Style transferred from references: ${data.style_summary}`);
+      }
+
       return data.renders || [];
     } catch (err) {
       console.error("Render agent failed:", err);
@@ -157,6 +188,8 @@ export class DesignerAgent {
           style: analysis.style || "contemporary",
           budget: analysis.budget,
           project_id: this.projectId,
+          description: this.userBrief,
+          project_type: this.projectType,
         },
       });
       if (error) throw error;
@@ -171,19 +204,70 @@ export class DesignerAgent {
     }
   }
 
-  /** Analyze user brief and determine project requirements */
+  /** Analyze user brief via LLM edge function (falls back to regex if unavailable) */
   async analyzeBrief(): Promise<BriefAnalysis> {
+    try {
+      const { data, error } = await supabase.functions.invoke("analyze-brief", {
+        body: {
+          brief: this.userBrief,
+          conversation_history: this.conversationHistory,
+          project_type: this.projectType,
+        },
+      });
+
+      if (error) throw error;
+      if (!data?.success || !data?.analysis) throw new Error("Invalid analysis response");
+
+      const analysis: BriefAnalysis = {
+        projectType: data.analysis.projectType || "residential",
+        style: data.analysis.style || null,
+        budget: data.analysis.budget || null,
+        timeline: data.analysis.timeline || "standard",
+        providedAssets: data.analysis.providedAssets || [],
+        requiredDeliverables: data.analysis.requiredDeliverables?.length
+          ? data.analysis.requiredDeliverables
+          : ["renders", "shopping"],
+        materials: data.analysis.materials || [],
+        lighting: data.analysis.lighting || null,
+        dimensions: data.analysis.dimensions || null,
+        clientPreferences: data.analysis.clientPreferences || [],
+      };
+
+      const extras = [
+        analysis.materials.length ? `materials: ${analysis.materials.join(", ")}` : null,
+        analysis.lighting ? `lighting: ${analysis.lighting}` : null,
+        analysis.dimensions ? `dimensions: ${analysis.dimensions}` : null,
+        analysis.clientPreferences.length ? `preferences: ${analysis.clientPreferences.join(", ")}` : null,
+      ].filter(Boolean);
+
+      await this.postMessage(
+        "status_update",
+        `Brief analyzed: ${analysis.projectType} project, ${analysis.style || "no style specified"}, ${analysis.requiredDeliverables.length} deliverables${extras.length ? ` — ${extras.join("; ")}` : ""}`,
+        { engine: data.engine }
+      );
+
+      return analysis;
+    } catch (err) {
+      console.error("LLM brief analysis failed, using client-side fallback:", err);
+      return this.analyzeBriefFallback();
+    }
+  }
+
+  /** Client-side regex fallback for brief analysis */
+  private analyzeBriefFallback(): BriefAnalysis {
     const brief = this.userBrief.toLowerCase();
-    const analysis: BriefAnalysis = {
+    return {
       projectType: this.getProjectType(brief),
       style: this.extractStyle(brief),
       budget: this.extractBudget(brief),
       timeline: this.extractTimeline(brief),
       providedAssets: this.identifyAssets(brief),
       requiredDeliverables: this.identifyDeliverables(brief),
+      materials: [],
+      lighting: null,
+      dimensions: null,
+      clientPreferences: [],
     };
-    await this.postMessage("status_update", `Brief analyzed: ${analysis.projectType} project, ${analysis.style || "no style specified"}, ${analysis.requiredDeliverables.length} deliverables`);
-    return analysis;
   }
 
   /** Spawn appropriate specialist agents based on project needs */
@@ -247,6 +331,41 @@ export class DesignerAgent {
       .eq("project_id", projectId)
       .order("created_at", { ascending: true });
     return (data || []) as unknown as AgentMessage[];
+  }
+
+  /** Load persisted render/sourcing results from completed agent sessions */
+  static async loadPersistedResults(projectId: string): Promise<OrchestrationResult | null> {
+    const { data: sessions } = await supabase
+      .from("agent_sessions")
+      .select("*")
+      .eq("project_id", projectId)
+      .eq("status", "completed")
+      .not("result_data", "is", null);
+
+    if (!sessions || sessions.length === 0) return null;
+
+    const renders: RenderResult[] = [];
+    const products: ProductResult[] = [];
+    let shoppingList = { total: 0, item_count: 0, budget_remaining: null as number | null };
+
+    for (const session of sessions) {
+      const rd = session.result_data as Record<string, unknown> | null;
+      if (!rd) continue;
+
+      if (Array.isArray(rd.renders)) {
+        renders.push(...(rd.renders as RenderResult[]));
+      }
+      if (Array.isArray(rd.products)) {
+        products.push(...(rd.products as ProductResult[]));
+      }
+      if (rd.shoppingList && typeof rd.shoppingList === "object") {
+        shoppingList = rd.shoppingList as typeof shoppingList;
+      }
+    }
+
+    if (renders.length === 0 && products.length === 0) return null;
+
+    return { renders, products, shoppingList };
   }
 
   static async updateSessionStatus(sessionId: string, status: AgentStatus, resultData?: Record<string, unknown>) {

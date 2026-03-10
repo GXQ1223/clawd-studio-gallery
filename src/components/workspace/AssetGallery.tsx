@@ -215,7 +215,7 @@ const AssetGallery = ({
   if (activeFolder === "3d model") {
     return (
       <div className="flex-1 min-w-0 h-full overflow-y-auto px-4 py-4">
-        <ModelViewerPlaceholder />
+        <ModelViewerPlaceholder projectId={projectId} />
       </div>
     );
   }

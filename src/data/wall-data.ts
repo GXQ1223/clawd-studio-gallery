@@ -8,6 +8,8 @@ export interface WallAsset {
   height: number;
   rotation: number;
   aiGenerated?: boolean;
+  /** render image URL */
+  imageUrl?: string;
   /** product fields */
   productName?: string;
   productPrice?: string;

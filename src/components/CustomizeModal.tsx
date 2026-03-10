@@ -106,17 +106,17 @@ const CustomizeModal = ({ open, onOpenChange, onGenerate }: Props) => {
 
   // Voice handlers
   const startRecording = () => {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (!SpeechRecognition) {
+    const SpeechRecognitionCtor = (window as unknown as Record<string, unknown>).SpeechRecognition || (window as unknown as Record<string, unknown>).webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
       setTranscript("Speech recognition not supported in this browser.");
       setVoiceState("done");
       return;
     }
-    const recognition = new SpeechRecognition();
+    const recognition = new (SpeechRecognitionCtor as new () => SpeechRecognition)();
     recognition.continuous = true;
     recognition.interimResults = false;
     recognition.lang = "en-US";
-    recognition.onresult = (event: any) => {
+    recognition.onresult = (event: SpeechRecognitionEvent) => {
       let text = "";
       for (let i = 0; i < event.results.length; i++) {
         text += event.results[i][0].transcript;
