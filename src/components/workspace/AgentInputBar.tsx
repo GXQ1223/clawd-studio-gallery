@@ -214,7 +214,7 @@ const AgentInputBar = ({
             accept="image/*"
             capture="environment"
             className="hidden"
-            onChange={(e) => addFiles(e.target.files)}
+            onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }}
           />
           <input
             ref={uploadRef}
@@ -222,7 +222,7 @@ const AgentInputBar = ({
             accept="image/*,application/pdf"
             multiple
             className="hidden"
-            onChange={(e) => addFiles(e.target.files)}
+            onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }}
           />
         </div>
 

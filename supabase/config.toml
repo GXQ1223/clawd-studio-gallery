@@ -4,7 +4,7 @@ project_id = "cahvyvmwqtbvyauorokn"
 verify_jwt = true
 
 [functions.generate-render]
-verify_jwt = false
+verify_jwt = true
 
 [functions.mock-sourcing]
 verify_jwt = true

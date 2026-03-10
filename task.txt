@@ -1,136 +1,119 @@
-# Clawd Studio Gallery — Task List
-# Generated from Manus AI Codebase Analysis Report (March 6, 2026)
+# Clawd Studio Gallery — Task List (v2)
+# Generated from Manus AI Codebase Analysis Report v2 (March 9, 2026)
+# Follows up on v1 report (March 6, 2026) — all 27 original tasks completed
+# Branch claude/add-image-generation-api-xevPk merged into main
 # Status: [ ] = todo, [x] = done, [~] = in progress
 
-## Phase 1: Wire Real AI (Critical Priority)
+## Phase 1: Critical Fixes for generate-render (Urgent)
 
-- [x] 1. Replace mock-render edge function with real image generation API (Stability AI / DALL-E 3 / Replicate SD XL)
-  - Update supabase/functions/mock-render/index.ts to call a real image generation API
-  - Construct architectural prompts from brief analysis (style, space type, materials, lighting, camera angle)
-  - Upload generated images to Supabase Storage instead of returning Unsplash URLs
-  - Return stored Supabase URLs
+- [x] 1. Enable JWT verification on generate-render edge function
+  - Remove verify_jwt = false for generate-render in supabase/config.toml
+  - Add Authorization header validation at the top of the serve() handler
+  - Return 401 for unauthenticated requests
+  - This function calls a paid API (Gemini) — unauthenticated access is a financial risk
 
-- [x] 2. Replace regex-based brief analysis with LLM call (Claude / GPT-4)
-  - Replace analyzeBrief() in src/lib/designerAgent.ts with an LLM API call
-  - Extract structured JSON: project type, style, dimensions, budget, preferences, materials, lighting, deliverables
-  - Use structured output to drive specialist agent planning
+- [ ] 2. Fix prompt hardcoded to "interior design" for all project types
+  - buildDesignPrompt() in generate-render/index.ts always says "interior design render"
+  - Add discipline-aware prompt mapping (interior, architecture, landscape, industrial)
+  - Accept project_type in the request body from designerAgent.ts
+  - Use discipline map: residential→"interior design render", architecture→"architectural exterior render", landscape→"landscape design visualization", etc.
+  - Fix fallback description from "A well-designed interior space" to be discipline-aware
 
-- [x] 3. Replace rule-based planning questions with LLM-generated contextual questions
-  - Update src/lib/planningQuestions.ts to call an LLM
-  - Generate non-redundant questions based on what's already known from the brief
-  - Only ask questions that would meaningfully change generated output
+- [ ] 3. Fix storage path mismatch with delete policy
+  - Edge function stores renders at {projectId}/render-{timestamp}-{index}.png
+  - Storage delete policy checks (storage.foldername(name))[1] = auth.uid()
+  - Project UUIDs ≠ user UUIDs, so deletions silently fail
+  - Add migration to fix the policy: check project ownership via projects table instead
+  - Also affects user-uploaded files from EmptyBriefPrompt.tsx
 
-- [x] 4. Re-enable JWT verification on all edge functions (security critical)
-  - Update supabase/config.toml to set verify_jwt = true for mock-render, mock-sourcing, agent-cron
-  - Add JWT validation logic inside each edge function
-  - Test authenticated calls from the client
+- [ ] 4. Fix imageConfig.aspectRatio nesting in Gemini API call
+  - Current: aspectRatio nested under imageConfig within generationConfig — may be silently ignored
+  - Correct: aspectRatio directly within generationConfig per Gemini API docs
+  - Fix hardcoded resolution metadata ("1408x768") to reflect actual API response dimensions
 
-## Phase 2: Data Persistence (High Priority)
+- [ ] 5. Add input validation on generate-render function
+  - Validate project_id is a non-empty string
+  - Validate description is under 2,000 characters
+  - Validate style is one of the known values
+  - Return 400 for invalid inputs
+  - Sanitize description before injecting into prompt (prompt injection risk)
 
-- [x] 5. Persist render results to Supabase Storage + database
-  - Create a renders table or use result_data JSONB on agent_sessions
-  - Store generated images in Supabase Storage
-  - Load persisted renders on workspace page reload
+- [ ] 6. Fix sequential generation timeout risk
+  - Three sequential Gemini calls take 30-90 seconds, risking Supabase free tier 150s timeout
+  - Option A: Generate one image per function call, call three times from client
+  - Option B: Reduce to 1-2 variations and parallelize where possible
+  - Add per-call timeout handling so partial results are returned rather than total failure
 
-- [x] 6. Persist conversation history across sessions
-  - Save conversation to agent_messages table instead of ephemeral React ref
-  - Rehydrate conversation history from agent_messages on workspace load
-  - Maintain multi-turn context across page reloads
+## Phase 2: Security & Configuration (High Priority)
 
-- [x] 7. Add project_type column to projects table and use in agent prompts
-  - Add project_type column to Supabase projects table
-  - Store project type from NewProjectModal
-  - Pass project type to agent for discipline-specific behavior
+- [ ] 7. Remove .env from Git history and add to .gitignore
+  - Root .env with Supabase credentials is committed to the repository
+  - Add .env, .env.local, .env.*.local to root .gitignore
+  - Add a root .env.example template alongside existing supabase/.env.example
+  - Consider using git filter-branch or BFG to remove .env from history
 
-- [x] 8. Wire attachment images to render agent as style references
-  - Pass user-uploaded attachments from AgentInputBar to the render agent
-  - Use reference images as style guidance for image generation
-  - Stop ignoring _attachments parameter in handleAgentSubmit
+- [ ] 8. Pin Gemini model version and add fallback
+  - gemini-2.5-flash-image model name hardcoded with v1beta endpoint — subject to breaking changes
+  - Pin to a specific stable version when available
+  - Add a GEMINI_MODEL env var so model can be updated without code deployment
+  - Add fallback model configuration for when primary model is deprecated
 
-## Phase 3: Connect Live Views (High Priority)
+## Phase 3: Data Integrity (High Priority)
 
-- [x] 9. Connect Journal view to live agent_messages data
-  - Replace static journalFeed from journal-data.ts with Supabase query
-  - Query agent_messages ordered by created_at
+- [ ] 9. Persist generate-render results to database
+  - Gemini renders are uploaded to Storage but no DB record is created
+  - After edge function returns render URLs, write to result_data on agent_session
+  - Store: project_id, url, label, style, prompt, generated_at
+  - Load persisted renders on workspace mount to restore gallery after page reload
+
+- [ ] 10. Persist conversation history to database on reload
+  - conversationRef in useDesignerAgent.ts resets to empty array on every page load
+  - agent_messages table is written to but never read back
+  - Rehydrate conversation from agent_messages on workspace load
+  - Restore multi-turn context: planning answers, refinement requests, agent responses
+
+## Phase 4: Remaining v1 Gaps (Medium Priority)
+
+- [ ] 11. Replace regex-based analyzeBrief() with LLM call
+  - Current analyzeBrief() in designerAgent.ts uses regex keyword matching
+  - Replace with structured LLM extraction (GPT-4 / Claude) outputting JSON
+  - Extract: project type, style, materials, budget, timeline, spatial constraints
+  - Most transformative change for perceived intelligence of the agent
+
+- [ ] 12. Connect Journal view to live agent_messages data
+  - ProjectJournal.tsx still renders hardcoded data from src/data/journal-data.ts
+  - Replace with live query of agent_messages ordered by created_at
   - Render rich content cards (image thumbnails, product cards, system messages)
-  - Add loading and error states
 
-- [x] 10. Connect Wall view to live assets with drag persistence
-  - Replace static wallAssets from wall-data.ts with actual kept assets
-  - Implement drag-to-position on freeform canvas
-  - Persist positions to a wall_layouts table or JSONB column
-  - Add loading and error states
+- [ ] 13. Connect Wall view to live assets
+  - ProjectWall.tsx still renders hardcoded data from src/data/wall-data.ts
+  - Replace with actual kept assets from agent results
+  - Implement drag-to-position persistence
 
-- [x] 11. Auto-assemble Deck from live project content
-  - Replace static deckSlides from deck-data.ts with real project data
-  - Generate slides from: brief summary, best renders, floor plan, material palette, sourcing list, budget
-  - Persist slides to a deck_slides table
-  - Add loading and error states
+- [ ] 14. Connect Deck view to live project content
+  - ProjectDeck.tsx still renders hardcoded data from src/data/deck-data.ts
+  - Auto-assemble slides from: brief summary, best renders, floor plan, material palette, sourcing list, budget
 
-## Phase 4: Product Sourcing & Real-Time (Medium Priority)
+- [ ] 15. Store project_type in database and propagate through agent
+  - NewProjectModal collects project type but discards it
+  - Add project_type column to projects table if not present
+  - Include in createProject mutation
+  - Pass through to render prompts, planning questions, and sourcing logic
 
-- [x] 12. Replace mock-sourcing with real product API integration
-  - Integrate with retailer APIs (Wayfair, 1stDibs, etc.) or build product index
-  - Implement style-based vector search for product matching
-  - Filter by dimensions, finish, price, and budget constraints
+- [ ] 16. Wire product sourcing to real product data
+  - mock-sourcing still returns hardcoded 5 products regardless of brief/style/budget
+  - Integrate real product catalog or retailer APIs
+  - Filter by dimensions, finish, price, budget constraints
 
-- [x] 13. Enable Supabase Realtime on agent feed
-  - Subscribe to agent_messages and agent_sessions changes
-  - Update AgentFeed in real-time without polling
-  - Support multiple team members viewing activity simultaneously
+## Phase 5: Code Quality (Lower Priority)
 
-- [x] 14. Set up actual cron scheduler for agent-cron function
-  - Configure pg_cron or external scheduler to call agent-cron edge function
-  - Replace manual trigger with automated schedule
-  - Support hourly, 6-hour, and daily intervals
+- [ ] 17. Fix remaining TypeScript `as any` and `as unknown as T` casts
+  - Casts in designerAgent.ts, useDesignerAgent.ts, useProjects.ts, ProjectWorkspace.tsx
+  - Suppress genuine type mismatches between Supabase types and domain types
+  - Replace with proper typing and type guards
 
-## Phase 5: Code Quality & Stability (Medium Priority)
-
-- [x] 15. Add React error boundaries
-  - Wrap major page components in error boundaries
-  - Prevent full app crash on rendering errors
-  - Show user-friendly error states
-
-- [x] 16. Fix TypeScript `as any` casts
-  - Resolve type mismatches in useProjects.ts, designerAgent.ts, ProjectWorkspace.tsx
-  - Replace `as any` and `as unknown as T` with proper typing
-  - Align Supabase-generated types with domain types
-
-- [x] 17. Split MvpCompare.tsx into separate component files
-  - Extract StudioView, JournalView, WallView, DeckView into own files
-  - Extract customize modal and transition animation
-  - Reduce monolithic 600+ line file
-
-- [x] 18. Remove dead code and hardcoded data
-  - Remove unused src/data/projects.ts (DB is source of truth)
-  - Clean up hardcoded project data
-  - Add .env.example and ensure .env is in .gitignore
-
-- [x] 19. Add comprehensive test coverage
-  - Unit tests for DesignerAgent class
-  - Integration tests for Supabase hooks
-  - Component tests for workspace UI
-  - Replace trivial placeholder test
-
-## Phase 6: Collaboration & Sharing (Lower Priority)
-
-- [x] 20. Implement project sharing / client view
-  - Add share_token column to projects table
-  - Create public /share/:token route with read-only view
-  - Wire the existing Share button in workspace top bar
-
-- [x] 21. Wire up non-functional navigation tabs
-  - Implement Library, Inspiration, and Sourcing nav tabs in TopNav
-  - Add routing and content for each tab
-
-- [x] 22. Add comments and annotations on renders
-  - Allow clients to mark up images in the browser
-  - Capture feedback as agent_messages of type user_message
-
-## Phase 7: Advanced Capabilities (Future)
-
-- [x] 23. ControlNet floor plan conditioning for spatially accurate renders
-- [x] 24. Style transfer from reference images using CLIP embeddings
-- [x] 25. Furniture placement compositing in renders
-- [x] 26. Automated PDF specification sheet generation
-- [x] 27. BIM integration (IFC file read/write for Revit, ArchiCAD)
+- [ ] 18. Add test coverage for new generate-render function
+  - Unit tests for buildDesignPrompt() with different project types
+  - Unit tests for the fallback mechanism in executeRenderAgent
+  - Integration tests for input validation
+  - Replace trivial placeholder test (expect(true).toBe(true))

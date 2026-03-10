@@ -113,6 +113,7 @@ const ProjectWorkspace = () => {
 
   const handleAssetDelete = useCallback((assetId: string) => {
     setKeptAssets((prev) => prev.filter((a) => a.id !== assetId));
+    setDeletedRenderIds((prev) => new Set(prev).add(assetId));
     toast("Asset removed");
   }, []);
 
