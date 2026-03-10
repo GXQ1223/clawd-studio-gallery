@@ -17,7 +17,7 @@ type Mode = "empty" | "sketch" | "viewing-3d" | "viewing-ifc";
 
 const SNAP_RADIUS = 8; // px — snap to grid dots within this radius
 const CLOSE_RADIUS = 12; // px — snap to first point to close a wall loop
-const POINT_HIT_RADIUS = 10; // px — click within this to select a point
+const POINT_HIT_RADIUS = 14; // px — click within this to select a point
 
 type EditMode = "draw" | "select" | "door" | "window";
 
@@ -54,6 +54,22 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
   const [activePath, setActivePath] = useState<Point2D[]>([]); // current path being drawn
   const [mousePos, setMousePos] = useState<Point2D | null>(null); // cursor preview
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Canvas zoom (pinch / scroll-wheel)
+  const [zoom, setZoom] = useState(1);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        setZoom((z) => Math.min(3, Math.max(0.25, z - e.deltaY * 0.005)));
+      }
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, []);
 
   // Openings & ceiling
   const [openings, setOpenings] = useState<Opening[]>([]);
@@ -132,21 +148,24 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
   const GRID_PX_MAP: Record<string, number> = { "1m": 40, "0.5m": 20, "1ft": 24 };
   const gridPx = GRID_PX_MAP[gridScale] || 24;
 
+  const [gridSnap, setGridSnap] = useState(true);
   const snapToGrid = useCallback((x: number, y: number): Point2D => {
-    const snappedX = Math.round(x / gridPx) * gridPx;
-    const snappedY = Math.round(y / gridPx) * gridPx;
-    const dist = Math.sqrt((x - snappedX) ** 2 + (y - snappedY) ** 2);
-    if (dist < SNAP_RADIUS) return { x: snappedX, y: snappedY };
+    if (gridSnap) {
+      return {
+        x: Math.round(x / gridPx) * gridPx,
+        y: Math.round(y / gridPx) * gridPx,
+      };
+    }
     return { x, y };
-  }, [gridPx]);
+  }, [gridPx, gridSnap]);
 
   // ─── Wall drawing handlers ─────────────────────────────
   const getSvgPoint = useCallback((e: React.MouseEvent): Point2D | null => {
     const svg = svgRef.current;
     if (!svg) return null;
     const rect = svg.getBoundingClientRect();
-    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-  }, []);
+    return { x: (e.clientX - rect.left) / zoom, y: (e.clientY - rect.top) / zoom };
+  }, [zoom]);
 
   // ─── Point hit-testing helper ──────────────────────────
   const findPointNear = useCallback((pos: Point2D): SelectedPoint | null => {
@@ -365,6 +384,10 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
       if (e.key === "s" && !e.metaKey && !e.ctrlKey && editMode !== "select") {
         setEditMode("select");
         setActivePath([]);
+        return;
+      }
+      if (e.key === "g" && !e.metaKey && !e.ctrlKey) {
+        setGridSnap((v) => !v);
         return;
       }
 
@@ -625,6 +648,17 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
                 </button>
               ))}
             </div>
+            <button
+              onClick={() => setGridSnap((v) => !v)}
+              className={`h-[24px] px-2 text-[10px] font-mono transition-colors ${
+                gridSnap
+                  ? "bg-foreground text-background"
+                  : "gallery-border text-muted-foreground hover:text-foreground"
+              }`}
+              title="Snap to grid (G)"
+            >
+              Snap
+            </button>
             <div className="w-px h-4 bg-border mx-1" />
             {/* Ceiling height */}
             <div className="flex items-center gap-1">
@@ -675,7 +709,7 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
           <div className="flex-1 flex">
             {/* Y-axis ruler */}
             <div className="w-[32px] shrink-0 relative overflow-hidden" style={{ borderRight: "1px solid hsl(var(--border))", background: "hsl(var(--muted))" }}>
-              {Array.from({ length: Math.ceil(800 / gridPx) }, (_, i) => (
+              {Array.from({ length: Math.ceil(800 / gridPx) + 1 }, (_, i) => (
                 <div
                   key={i}
                   className="absolute right-1 font-mono text-[8px] text-muted-foreground/60"
@@ -691,7 +725,7 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
                 <div className="absolute left-0 top-[6px] flex items-center gap-1 px-2">
                   <span className="font-mono text-[8px] text-muted-foreground/80">Grid: {scaleLabel}/dot</span>
                 </div>
-                {Array.from({ length: Math.ceil(1200 / gridPx) }, (_, i) => (
+                {Array.from({ length: Math.ceil(1200 / gridPx) + 1 }, (_, i) => (
                   <div
                     key={i}
                     className="absolute bottom-1 font-mono text-[8px] text-muted-foreground/60"
@@ -703,6 +737,7 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
               </div>
               {/* Drawing area with dot grid + SVG overlay */}
               <div
+                ref={canvasRef}
                 className={`flex-1 relative overflow-hidden ${
                   editMode === "select"
                     ? hoveredPoint ? "cursor-grab" : isDragging ? "cursor-grabbing" : "cursor-default"
@@ -712,13 +747,14 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
                 }`}
                 style={{
                   backgroundImage: `radial-gradient(circle, hsl(var(--border)) 1px, transparent 1px)`,
-                  backgroundSize: `${gridPx}px ${gridPx}px`,
+                  backgroundSize: `${gridPx * zoom}px ${gridPx * zoom}px`,
                   backgroundPosition: "0 0",
                 }}
               >
                 <svg
                   ref={svgRef}
-                  className="absolute inset-0 w-full h-full"
+                  className="absolute w-full h-full"
+                  style={{ transformOrigin: "0 0", transform: `scale(${zoom})` }}
                   onClick={handleCanvasClick}
                   onMouseMove={handleCanvasMouseMove}
                   onMouseDown={handleCanvasMouseDown}
@@ -745,10 +781,11 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
                             key={i}
                             cx={p.x}
                             cy={p.y}
-                            r={isSelected ? "7" : isHovered ? "6" : "4"}
+                            r={isSelected ? "8" : isHovered ? "7" : editMode === "select" ? "5" : "4"}
                             fill={isSelected ? "#f97316" : isHovered ? "#fb923c" : "#1e293b"}
-                            stroke={isSelected ? "#fff" : isHovered ? "#fff" : "none"}
-                            strokeWidth={isSelected || isHovered ? "2" : "0"}
+                            stroke={isSelected ? "#fff" : isHovered ? "#fff" : editMode === "select" ? "#94a3b8" : "none"}
+                            strokeWidth={isSelected || isHovered ? "2" : editMode === "select" ? "1" : "0"}
+                            style={editMode === "select" ? { cursor: "pointer" } : undefined}
                           />
                         );
                       })}
@@ -929,10 +966,12 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
                 </div>
 
                 {/* Help text */}
-                {editMode === "draw" && wallPaths.length === 0 && activePath.length === 0 && (
+                {editMode === "draw" && activePath.length === 0 && (
                   <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-none">
                     <span className="font-mono text-[10px] text-muted-foreground bg-background/80 px-2 py-1">
-                      Click to place wall points — double-click or Enter to finish — click near start to close loop
+                      {wallPaths.length === 0
+                        ? "Click to place wall points — double-click or Enter to finish — click near start to close loop"
+                        : "Click to draw more walls — press S to select & edit existing points"}
                     </span>
                   </div>
                 )}
@@ -956,6 +995,12 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
                       Draw walls first, then place {editMode}s
                     </span>
                   </div>
+                )}
+
+                {zoom !== 1 && (
+                  <span className="absolute bottom-1 right-3 font-mono text-[8px] text-muted-foreground/50 pointer-events-none">
+                    {Math.round(zoom * 100)}%
+                  </span>
                 )}
               </div>
             </div>
