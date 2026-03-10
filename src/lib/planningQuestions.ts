@@ -88,12 +88,18 @@ export function generateFallbackQuestions(brief: string): PlanningQuestion[] {
 }
 
 /** Compose a comprehensive prompt from brief + answers for image generation */
+/** Strip control characters and limit length for prompt safety */
+function sanitizePromptInput(s: string, maxLen = 2000): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").trim().slice(0, maxLen);
+}
+
 export function composeFinalPrompt(originalBrief: string, answers: Record<string, string>): string {
-  const parts: string[] = [originalBrief];
+  const parts: string[] = [sanitizePromptInput(originalBrief, 5000)];
 
   for (const [key, value] of Object.entries(answers)) {
     if (value) {
-      parts.push(`${key}: ${value}`);
+      parts.push(`${sanitizePromptInput(key, 200)}: ${sanitizePromptInput(value)}`);
     }
   }
 

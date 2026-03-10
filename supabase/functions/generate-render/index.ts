@@ -197,10 +197,19 @@ async function uploadToStorage(
   const fileName = `${projectId}/render-${Date.now()}-${index}.png`;
   const bucket = "project-assets";
 
-  const binaryString = atob(b64Data);
+  let binaryString: string;
+  try {
+    binaryString = atob(b64Data);
+  } catch {
+    throw new Error("Invalid base64 image data");
+  }
   const bytes = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i);
+  }
+  // Validate PNG magic bytes (‰PNG\r\n)
+  if (bytes.length < 8 || bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4E || bytes[3] !== 0x47) {
+    throw new Error("Invalid image data: not a valid PNG file");
   }
 
   const { error } = await supabase.storage

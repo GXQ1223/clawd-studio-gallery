@@ -31,7 +31,17 @@ const FurnitureCompositor = ({ renderUrl, renderLabel, products, placements, onU
     const productData = e.dataTransfer.getData("application/json");
     if (!productData || !canvasRef.current) return;
 
-    const product: ProductResult = JSON.parse(productData);
+    let product: ProductResult;
+    try {
+      product = JSON.parse(productData);
+    } catch {
+      console.error("Invalid product data dropped");
+      return;
+    }
+    if (!product || typeof product.id !== "string" || typeof product.name !== "string") {
+      console.error("Malformed product data dropped");
+      return;
+    }
     const rect = canvasRef.current.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
     const y = ((e.clientY - rect.top) / rect.height) * 100;
