@@ -12,7 +12,7 @@
   - Return 401 for unauthenticated requests
   - This function calls a paid API (Gemini) — unauthenticated access is a financial risk
 
-- [x] 2. Fix prompt hardcoded to "interior design" for all project types
+- [ ] 2. Fix prompt hardcoded to "interior design" for all project types
   - buildDesignPrompt() in generate-render/index.ts always says "interior design render"
   - Add discipline-aware prompt mapping (interior, architecture, landscape, industrial)
   - Accept project_type in the request body from designerAgent.ts
