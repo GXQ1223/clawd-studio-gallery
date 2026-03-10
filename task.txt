@@ -46,7 +46,7 @@
 
 ## Phase 2: Security & Configuration (High Priority)
 
-- [ ] 7. Remove .env from Git history and add to .gitignore
+- [x] 7. Remove .env from Git history and add to .gitignore
   - Root .env with Supabase credentials is committed to the repository
   - Add .env, .env.local, .env.*.local to root .gitignore
   - Add a root .env.example template alongside existing supabase/.env.example
