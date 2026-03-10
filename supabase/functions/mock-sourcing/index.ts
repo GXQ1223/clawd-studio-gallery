@@ -30,7 +30,7 @@ interface SearchFilters {
 
 /** Query the product_catalog table with style-based matching and filters */
 async function searchProductCatalog(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   filters: SearchFilters
 ): Promise<Product[]> {
   const { data, error } = await supabase.rpc("search_products", {
