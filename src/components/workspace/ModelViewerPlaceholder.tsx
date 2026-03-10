@@ -26,6 +26,17 @@ interface SelectedPoint {
   pointIndex: number;
 }
 
+export interface Opening {
+  id: string;
+  type: "door" | "window";
+  wallPathIndex: number;  // index into wallPaths
+  segmentIndex: number;   // which segment (edge) of that path
+  position: number;       // 0–1 along the segment
+  width: number;          // meters
+  height: number;         // meters
+  sillHeight?: number;    // meters from floor (windows only)
+}
+
 const ModelViewerPlaceholder = ({ projectId }: Props) => {
   const [mode, setMode] = useState<Mode>("empty");
   const [summary, setSummary] = useState<IfcProjectSummary | null>(null);
@@ -43,6 +54,10 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
   const [activePath, setActivePath] = useState<Point2D[]>([]); // current path being drawn
   const [mousePos, setMousePos] = useState<Point2D | null>(null); // cursor preview
   const svgRef = useRef<SVGSVGElement>(null);
+
+  // Openings & ceiling
+  const [openings, setOpenings] = useState<Opening[]>([]);
+  const [ceilingHeight, setCeilingHeight] = useState(2.8); // meters
 
   // Point editing state
   const [editMode, setEditMode] = useState<EditMode>("draw");
@@ -306,8 +321,9 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
           paths: roomPaths,
           project_id: projectId,
           grid_scale: gridScale,
-          wall_height: 2.8,
+          wall_height: ceilingHeight,
           wall_thickness: 0.15,
+          openings,
         },
       });
       if (error) throw error;
@@ -317,7 +333,7 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "GLB export failed");
     }
-  }, [projectId, roomPaths, gridScale]);
+  }, [projectId, roomPaths, gridScale, ceilingHeight, openings]);
 
   // ─── IFC tree helpers ───────────────────────────────────
   const toggleExpand = useCallback((id: number) => {
@@ -340,6 +356,8 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
     setActivePath([]);
     setSelectedPoint(null);
     setEditMode("draw");
+    setOpenings([]);
+    setCeilingHeight(2.8);
   }, []);
 
   // ═══════════════════════════════════════════════════════
@@ -692,8 +710,9 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
       <RoomEditor3D
         paths={roomPaths}
         gridScale={gridScale}
-        wallHeight={2.8}
+        wallHeight={ceilingHeight}
         wallThickness={0.15}
+        openings={openings}
         onBack={() => setMode("sketch")}
         onExportGlb={handleExportGlb}
       />
