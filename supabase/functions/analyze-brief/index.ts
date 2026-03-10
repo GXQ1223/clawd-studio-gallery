@@ -190,10 +190,12 @@ serve(async (req) => {
       { role: "system", content: SYSTEM_PROMPT },
     ];
 
-    // Include conversation history for richer context
+    // Include conversation history for richer context (validated)
     if (conversation_history && Array.isArray(conversation_history)) {
       for (const msg of conversation_history) {
-        messages.push({ role: "user", content: msg });
+        if (typeof msg === "string" && msg.length > 0 && msg.length <= 5000) {
+          messages.push({ role: "user", content: msg.slice(0, 5000) });
+        }
       }
     }
 

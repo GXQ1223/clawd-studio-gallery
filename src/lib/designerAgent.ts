@@ -312,7 +312,7 @@ export class DesignerAgent {
           .insert({
             project_id: this.projectId,
             agent_type: spec.type,
-            session_label: `${this.projectId}-${spec.type}-${Date.now()}`,
+            session_label: `${this.projectId}-${spec.type}-${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, "0")).join("")}`,
             task_description: spec.task,
             dependencies: spec.dependencies,
             priority: spec.priority,

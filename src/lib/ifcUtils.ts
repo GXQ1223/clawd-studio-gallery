@@ -360,9 +360,6 @@ export function generateIfcFile(data: BimProjectData): string {
 /** Generate a simplified IFC GUID (22-char base64-like identifier) */
 function generateGuid(): string {
   const chars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_$";
-  let result = "";
-  for (let i = 0; i < 22; i++) {
-    result += chars[Math.floor(Math.random() * 64)];
-  }
-  return result;
+  const bytes = crypto.getRandomValues(new Uint8Array(22));
+  return Array.from(bytes).map(b => chars[b % 64]).join("");
 }
