@@ -100,7 +100,7 @@
   - Include in createProject mutation
   - Pass through to render prompts, planning questions, and sourcing logic
 
-- [ ] 16. Wire product sourcing to real product data
+- [x] 16. Wire product sourcing to real product data
   - mock-sourcing still returns hardcoded 5 products regardless of brief/style/budget
   - Integrate real product catalog or retailer APIs
   - Filter by dimensions, finish, price, budget constraints
