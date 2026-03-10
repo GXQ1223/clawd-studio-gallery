@@ -30,7 +30,7 @@ interface SearchFilters {
 
 /** Query the product_catalog table with style-based matching and filters */
 async function searchProductCatalog(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   filters: SearchFilters
 ): Promise<Product[]> {
   const { data, error } = await supabase.rpc("search_products", {
@@ -246,7 +246,7 @@ Deno.serve(async (req) => {
     );
   } catch (error) {
     return new Response(
-      JSON.stringify({ success: false, error: error.message }),
+      JSON.stringify({ success: false, error: error instanceof Error ? error.message : String(error) }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

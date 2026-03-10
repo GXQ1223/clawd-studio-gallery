@@ -112,7 +112,7 @@ const CustomizeModal = ({ open, onOpenChange, onGenerate }: Props) => {
       setVoiceState("done");
       return;
     }
-    const recognition = new (SpeechRecognitionCtor as new () => SpeechRecognition)();
+    const recognition = new (SpeechRecognitionCtor as any)();
     recognition.continuous = true;
     recognition.interimResults = false;
     recognition.lang = "en-US";

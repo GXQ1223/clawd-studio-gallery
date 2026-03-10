@@ -112,7 +112,7 @@ async function generateImage(prompt: string): Promise<Uint8Array | null> {
  * Upload image bytes to Supabase Storage and return public URL.
  */
 async function uploadToStorage(
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   projectId: string,
   imageBytes: Uint8Array,
   index: number,
