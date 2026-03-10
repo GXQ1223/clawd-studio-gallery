@@ -4,15 +4,17 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
-
+const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-/** Discipline-specific configuration for prompt generation */
+const AI_GATEWAY = "https://ai.gateway.lovable.dev/v1/chat/completions";
+const IMAGE_MODEL = "google/gemini-2.5-flash-image";
+
+/** Discipline-specific configuration */
 const DISCIPLINE_CONFIG: Record<string, {
   renderType: string;
   defaultDescription: string;
@@ -77,28 +79,17 @@ const DISCIPLINE_CONFIG: Record<string, {
   },
 };
 
-/** Map project_type values to discipline keys */
 function getDiscipline(projectType?: string): string {
   if (!projectType) return "interior";
   const map: Record<string, string> = {
-    residential: "interior",
-    commercial: "interior",
-    renovation: "interior",
-    interior: "interior",
-    architecture: "architecture",
-    exterior: "architecture",
-    landscape: "landscape",
-    garden: "landscape",
-    outdoor: "landscape",
-    industrial: "industrial",
-    warehouse: "industrial",
+    residential: "interior", commercial: "interior", renovation: "interior", interior: "interior",
+    architecture: "architecture", exterior: "architecture",
+    landscape: "landscape", garden: "landscape", outdoor: "landscape",
+    industrial: "industrial", warehouse: "industrial",
   };
   return map[projectType.toLowerCase()] || "interior";
 }
 
-/**
- * Build a discipline-aware design prompt optimized for photorealistic renders.
- */
 function buildDesignPrompt(
   style: string,
   description: string,
@@ -110,7 +101,7 @@ function buildDesignPrompt(
   const angle = config.cameraAngles[variationIndex % config.cameraAngles.length];
 
   return [
-    `Photorealistic ${config.renderType}.`,
+    `Generate a photorealistic ${config.renderType}.`,
     `Style: ${style}.`,
     `${description}`,
     `Camera: ${angle}.`,
@@ -122,47 +113,43 @@ function buildDesignPrompt(
   ].join(" ");
 }
 
-/**
- * Call DALL-E 3 API to generate a single image. Returns the image URL.
- */
+/** Call Lovable AI Gateway with Gemini image model */
 async function generateImage(prompt: string): Promise<string | null> {
-  const response = await fetch("https://api.openai.com/v1/images/generations", {
+  const response = await fetch(AI_GATEWAY, {
     method: "POST",
     headers: {
+      Authorization: `Bearer ${LOVABLE_API_KEY}`,
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${OPENAI_API_KEY}`,
     },
     body: JSON.stringify({
-      model: "dall-e-3",
-      prompt,
-      n: 1,
-      size: "1792x1024",
-      quality: "hd",
-      response_format: "b64_json",
+      model: IMAGE_MODEL,
+      messages: [{ role: "user", content: prompt }],
+      modalities: ["image", "text"],
     }),
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`DALL-E API error (${response.status}):`, errorText);
-    throw new Error(
-      `DALL-E API returned ${response.status}: ${errorText.slice(0, 200)}`,
-    );
+    console.error(`AI Gateway error (${response.status}):`, errorText);
+    throw new Error(`AI Gateway returned ${response.status}: ${errorText.slice(0, 200)}`);
   }
 
   const data = await response.json();
-  const b64 = data?.data?.[0]?.b64_json;
-  if (!b64) {
-    console.error("No image data in DALL-E response:", JSON.stringify(data).slice(0, 500));
+  const images = data?.choices?.[0]?.message?.images;
+  if (!images || images.length === 0) {
+    console.error("No images in AI Gateway response");
     return null;
   }
 
-  return b64;
+  // Extract base64 data from data:image/png;base64,... URL
+  const dataUrl = images[0]?.image_url?.url;
+  if (!dataUrl) return null;
+
+  const base64Match = dataUrl.match(/^data:image\/\w+;base64,(.+)$/);
+  return base64Match ? base64Match[1] : null;
 }
 
-/**
- * Upload base64 image to Supabase Storage and return public URL.
- */
+/** Upload base64 image to Supabase Storage */
 async function uploadToStorage(
   supabase: any,
   projectId: string,
@@ -172,7 +159,6 @@ async function uploadToStorage(
   const fileName = `${projectId}/render-${Date.now()}-${index}.png`;
   const bucket = "project-assets";
 
-  // Decode base64 to binary
   const binaryString = atob(b64Data);
   const bytes = new Uint8Array(binaryString.length);
   for (let i = 0; i < binaryString.length; i++) {
@@ -181,20 +167,14 @@ async function uploadToStorage(
 
   const { error } = await supabase.storage
     .from(bucket)
-    .upload(fileName, bytes, {
-      contentType: "image/png",
-      upsert: false,
-    });
+    .upload(fileName, bytes, { contentType: "image/png", upsert: false });
 
   if (error) {
     console.error("Storage upload error:", error);
     throw new Error(`Failed to upload render: ${error.message}`);
   }
 
-  const { data: urlData } = supabase.storage
-    .from(bucket)
-    .getPublicUrl(fileName);
-
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
   return urlData.publicUrl;
 }
 
@@ -204,7 +184,7 @@ serve(async (req) => {
   }
 
   try {
-    // JWT verification — reject unauthenticated requests
+    // JWT verification
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(
@@ -222,10 +202,8 @@ serve(async (req) => {
       );
     }
 
-    if (!OPENAI_API_KEY) {
-      throw new Error(
-        "OPENAI_API_KEY is not configured. Set it in Supabase Edge Function secrets.",
-      );
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY is not configured.");
     }
 
     const { style, description, project_id, project_type } = await req.json();
@@ -233,66 +211,56 @@ serve(async (req) => {
     const discipline = getDiscipline(project_type);
     const startTime = Date.now();
 
-    // Initialize Supabase client with service role for storage uploads
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     const renders: Array<{
-      id: string;
-      url: string;
-      label: string;
-      style: string;
-      resolution: string;
-      generated_at: string;
+      id: string; url: string; label: string;
+      style: string; resolution: string; generated_at: string;
     }> = [];
 
     const variationLabels = ["Direction A", "Direction B", "Direction C"];
+    const disciplineConfig = DISCIPLINE_CONFIG[discipline] || DISCIPLINE_CONFIG.interior;
 
-    // Generate 3 variations — DALL-E 3 supports parallel calls
-    const promises = Array.from({ length: 3 }, (_, i) => {
-      const disciplineConfig = DISCIPLINE_CONFIG[discipline] || DISCIPLINE_CONFIG.interior;
-      const prompt = buildDesignPrompt(
-        styleLabel,
-        description || disciplineConfig.defaultDescription,
-        i,
-        project_type,
-      );
-      return generateImage(prompt)
-        .then(async (b64) => {
-          if (!b64) return null;
-          const url = await uploadToStorage(supabase, project_id, b64, i);
-          return {
-            id: `render-${Date.now()}-${i}`,
-            url,
-            label: `${styleLabel.charAt(0).toUpperCase() + styleLabel.slice(1)} ${variationLabels[i]}`,
-            style: styleLabel,
-            resolution: "1792x1024",
-            generated_at: new Date().toISOString(),
-          };
-        })
-        .catch((err) => {
-          console.error(`Failed to generate variation ${i}:`, err);
-          return null;
+    // Generate 3 variations sequentially to avoid rate limits
+    for (let i = 0; i < 3; i++) {
+      try {
+        const prompt = buildDesignPrompt(
+          styleLabel,
+          description || disciplineConfig.defaultDescription,
+          i,
+          project_type,
+        );
+
+        const b64 = await generateImage(prompt);
+        if (!b64) {
+          console.error(`Variation ${i} returned no image data, skipping`);
+          continue;
+        }
+
+        const url = await uploadToStorage(supabase, project_id, b64, i);
+
+        renders.push({
+          id: `render-${Date.now()}-${i}`,
+          url,
+          label: `${styleLabel.charAt(0).toUpperCase() + styleLabel.slice(1)} ${variationLabels[i]}`,
+          style: styleLabel,
+          resolution: "1024x1024",
+          generated_at: new Date().toISOString(),
         });
-    });
-
-    const settled = await Promise.all(promises);
-    for (const r of settled) {
-      if (r) renders.push(r);
+      } catch (err) {
+        console.error(`Failed to generate variation ${i}:`, err);
+      }
     }
-
-    const processingTime = Date.now() - startTime;
 
     return new Response(
       JSON.stringify({
         success: true,
         project_id,
         renders,
-        processing_time_ms: processingTime,
-        engine: "dall-e-3 (live)",
+        processing_time_ms: Date.now() - startTime,
+        engine: "gemini-2.5-flash-image (lovable-ai)",
       }),
-      {
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (error) {
     console.error("generate-render error:", error);
@@ -301,10 +269,7 @@ serve(async (req) => {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
       }),
-      {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      },
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
 });
