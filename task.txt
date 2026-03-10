@@ -60,13 +60,13 @@
 
 ## Phase 3: Data Integrity (High Priority)
 
-- [ ] 9. Persist generate-render results to database
+- [x] 9. Persist generate-render results to database
   - Gemini renders are uploaded to Storage but no DB record is created
   - After edge function returns render URLs, write to result_data on agent_session
   - Store: project_id, url, label, style, prompt, generated_at
   - Load persisted renders on workspace mount to restore gallery after page reload
 
-- [ ] 10. Persist conversation history to database on reload
+- [x] 10. Persist conversation history to database on reload
   - conversationRef in useDesignerAgent.ts resets to empty array on every page load
   - agent_messages table is written to but never read back
   - Rehydrate conversation from agent_messages on workspace load
@@ -74,27 +74,27 @@
 
 ## Phase 4: Remaining v1 Gaps (Medium Priority)
 
-- [ ] 11. Replace regex-based analyzeBrief() with LLM call
+- [x] 11. Replace regex-based analyzeBrief() with LLM call
   - Current analyzeBrief() in designerAgent.ts uses regex keyword matching
   - Replace with structured LLM extraction (GPT-4 / Claude) outputting JSON
   - Extract: project type, style, materials, budget, timeline, spatial constraints
   - Most transformative change for perceived intelligence of the agent
 
-- [ ] 12. Connect Journal view to live agent_messages data
+- [x] 12. Connect Journal view to live agent_messages data
   - ProjectJournal.tsx still renders hardcoded data from src/data/journal-data.ts
   - Replace with live query of agent_messages ordered by created_at
   - Render rich content cards (image thumbnails, product cards, system messages)
 
-- [ ] 13. Connect Wall view to live assets
+- [x] 13. Connect Wall view to live assets
   - ProjectWall.tsx still renders hardcoded data from src/data/wall-data.ts
   - Replace with actual kept assets from agent results
   - Implement drag-to-position persistence
 
-- [ ] 14. Connect Deck view to live project content
+- [x] 14. Connect Deck view to live project content
   - ProjectDeck.tsx still renders hardcoded data from src/data/deck-data.ts
   - Auto-assemble slides from: brief summary, best renders, floor plan, material palette, sourcing list, budget
 
-- [ ] 15. Store project_type in database and propagate through agent
+- [x] 15. Store project_type in database and propagate through agent
   - NewProjectModal collects project type but discards it
   - Add project_type column to projects table if not present
   - Include in createProject mutation
@@ -107,12 +107,12 @@
 
 ## Phase 5: Code Quality (Lower Priority)
 
-- [ ] 17. Fix remaining TypeScript `as any` and `as unknown as T` casts
+- [x] 17. Fix remaining TypeScript `as any` and `as unknown as T` casts
   - Casts in designerAgent.ts, useDesignerAgent.ts, useProjects.ts, ProjectWorkspace.tsx
   - Suppress genuine type mismatches between Supabase types and domain types
   - Replace with proper typing and type guards
 
-- [ ] 18. Add test coverage for new generate-render function
+- [x] 18. Add test coverage for new generate-render function
   - Unit tests for buildDesignPrompt() with different project types
   - Unit tests for the fallback mechanism in executeRenderAgent
   - Integration tests for input validation

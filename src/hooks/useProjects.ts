@@ -90,7 +90,7 @@ export function useUpdateProject() {
   return useMutation({
     mutationFn: async ({ id, ...updates }: Partial<Project> & { id: string }) => {
       // Convert domain types to Supabase-compatible Json types
-      const payload: Record<string, any> = {
+      const payload: Record<string, Json | string | null | undefined> = {
         ...updates,
         updated_at: new Date().toISOString(),
       };
