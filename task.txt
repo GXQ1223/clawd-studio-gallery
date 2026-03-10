@@ -26,7 +26,7 @@
   - Add migration to fix the policy: check project ownership via projects table instead
   - Also affects user-uploaded files from EmptyBriefPrompt.tsx
 
-- [ ] 4. Fix imageConfig.aspectRatio nesting in Gemini API call
+- [x] 4. Fix imageConfig.aspectRatio nesting in Gemini API call
   - Current: aspectRatio nested under imageConfig within generationConfig — may be silently ignored
   - Correct: aspectRatio directly within generationConfig per Gemini API docs
   - Fix hardcoded resolution metadata ("1408x768") to reflect actual API response dimensions

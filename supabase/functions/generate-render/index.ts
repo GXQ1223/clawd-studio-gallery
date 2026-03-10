@@ -245,7 +245,7 @@ serve(async (req) => {
           url,
           label: `${styleLabel.charAt(0).toUpperCase() + styleLabel.slice(1)} ${variationLabels[i]}`,
           style: styleLabel,
-          resolution: "1408x768",
+          resolution: "1024x576",
           generated_at: new Date().toISOString(),
         });
       } catch (err) {
