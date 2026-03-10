@@ -64,7 +64,7 @@ describe("composeFinalPrompt", () => {
     expect(result).toContain("modern living room");
     expect(result).toContain("size: Medium");
     expect(result).toContain("budget: $15k");
-    expect(result).toEndWith(".");
+    expect(result.endsWith(".")).toBe(true);
   });
 
   it("should skip empty answers", () => {
