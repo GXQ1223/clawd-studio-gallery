@@ -19,7 +19,7 @@ const SNAP_RADIUS = 8; // px — snap to grid dots within this radius
 const CLOSE_RADIUS = 12; // px — snap to first point to close a wall loop
 const POINT_HIT_RADIUS = 10; // px — click within this to select a point
 
-type EditMode = "draw" | "select";
+type EditMode = "draw" | "select" | "door" | "window";
 
 interface SelectedPoint {
   pathIndex: number; // index into wallPaths
@@ -64,6 +64,11 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
   const [selectedPoint, setSelectedPoint] = useState<SelectedPoint | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [hoveredPoint, setHoveredPoint] = useState<SelectedPoint | null>(null);
+
+  // Opening editing state
+  const [selectedOpeningId, setSelectedOpeningId] = useState<string | null>(null);
+  const [hoveredOpeningId, setHoveredOpeningId] = useState<string | null>(null);
+  const openingIdCounter = useRef(0);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -160,16 +165,119 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
     return best;
   }, [wallPaths]);
 
+  // ─── Segment hit-testing (for door/window placement) ────
+  const GRID_METERS: Record<string, number> = { "1m": 1, "0.5m": 0.5, "1ft": 0.3048 };
+  const metersPerPx = (GRID_METERS[gridScale] || 0.3048) / gridPx;
+
+  const findSegmentNear = useCallback((pos: Point2D): { pathIndex: number; segmentIndex: number; position: number } | null => {
+    const MAX_DIST = 8; // px distance threshold to wall segment
+    let best: { pathIndex: number; segmentIndex: number; position: number; dist: number } | null = null;
+    for (let pi = 0; pi < wallPaths.length; pi++) {
+      const path = wallPaths[pi];
+      for (let si = 0; si < path.length - 1; si++) {
+        const a = path[si];
+        const b = path[si + 1];
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const lenSq = dx * dx + dy * dy;
+        if (lenSq < 1) continue;
+        // Project pos onto segment
+        let t = ((pos.x - a.x) * dx + (pos.y - a.y) * dy) / lenSq;
+        t = Math.max(0.05, Math.min(0.95, t)); // clamp with margin
+        const projX = a.x + t * dx;
+        const projY = a.y + t * dy;
+        const dist = Math.sqrt((pos.x - projX) ** 2 + (pos.y - projY) ** 2);
+        if (dist < MAX_DIST && (!best || dist < best.dist)) {
+          best = { pathIndex: pi, segmentIndex: si, position: t, dist };
+        }
+      }
+    }
+    return best ? { pathIndex: best.pathIndex, segmentIndex: best.segmentIndex, position: best.position } : null;
+  }, [wallPaths]);
+
+  // ─── Opening SVG geometry helper ──────────────────────────
+  const getOpeningSvgCoords = useCallback((opening: Opening) => {
+    const path = wallPaths[opening.wallPathIndex];
+    if (!path) return null;
+    const a = path[opening.segmentIndex];
+    const b = path[opening.segmentIndex + 1];
+    if (!a || !b) return null;
+
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const segLen = Math.sqrt(dx * dx + dy * dy);
+    if (segLen < 1) return null;
+
+    // Unit direction and perpendicular
+    const ux = dx / segLen;
+    const uy = dy / segLen;
+    const nx = -uy; // perpendicular
+    const ny = ux;
+
+    // Opening center along segment
+    const cx = a.x + opening.position * dx;
+    const cy = a.y + opening.position * dy;
+
+    // Opening half-width in pixels
+    const halfW = (opening.width / metersPerPx) / 2;
+
+    return {
+      x1: cx - halfW * ux,
+      y1: cy - halfW * uy,
+      x2: cx + halfW * ux,
+      y2: cy + halfW * uy,
+      cx, cy,
+      nx, ny, ux, uy,
+      halfW,
+    };
+  }, [wallPaths, metersPerPx]);
+
   // ─── Canvas handlers (mode-aware) ───────────────────────
   const handleCanvasClick = useCallback((e: React.MouseEvent) => {
     const raw = getSvgPoint(e);
     if (!raw) return;
 
     if (editMode === "select") {
-      // In select mode: click to select/deselect points
-      if (isDragging) return; // ignore click at end of drag
+      // In select mode: click to select/deselect points or openings
+      if (isDragging) return;
+      // Check openings first
+      const hitOpening = openings.find((op) => {
+        const coords = getOpeningSvgCoords(op);
+        if (!coords) return false;
+        const dist = Math.sqrt((raw.x - coords.cx) ** 2 + (raw.y - coords.cy) ** 2);
+        return dist < coords.halfW + 6;
+      });
+      if (hitOpening) {
+        setSelectedOpeningId(hitOpening.id);
+        setSelectedPoint(null);
+        return;
+      }
       const hit = findPointNear(raw);
       setSelectedPoint(hit);
+      setSelectedOpeningId(null);
+      return;
+    }
+
+    if (editMode === "door" || editMode === "window") {
+      // Place a door or window on the nearest wall segment
+      const seg = findSegmentNear(raw);
+      if (!seg) {
+        toast.error("Click on a wall segment to place");
+        return;
+      }
+      const id = `opening-${++openingIdCounter.current}`;
+      const isDoor = editMode === "door";
+      const newOpening: Opening = {
+        id,
+        type: isDoor ? "door" : "window",
+        wallPathIndex: seg.pathIndex,
+        segmentIndex: seg.segmentIndex,
+        position: seg.position,
+        width: isDoor ? 0.9 : 1.2,   // meters
+        height: isDoor ? 2.1 : 1.2,  // meters
+        sillHeight: isDoor ? undefined : 0.9,
+      };
+      setOpenings((prev) => [...prev, newOpening]);
       return;
     }
 
@@ -181,7 +289,6 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
       const first = activePath[0];
       const dist = Math.sqrt((pt.x - first.x) ** 2 + (pt.y - first.y) ** 2);
       if (dist < CLOSE_RADIUS) {
-        // Close the path
         setWallPaths((prev) => [...prev, [...activePath, { ...first }]]);
         setActivePath([]);
         return;
@@ -189,7 +296,7 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
     }
 
     setActivePath((prev) => [...prev, pt]);
-  }, [getSvgPoint, snapToGrid, activePath, editMode, isDragging, findPointNear]);
+  }, [getSvgPoint, snapToGrid, activePath, editMode, isDragging, findPointNear, findSegmentNear, openings, getOpeningSvgCoords]);
 
   const handleCanvasMouseMove = useCallback((e: React.MouseEvent) => {
     const raw = getSvgPoint(e);
@@ -249,9 +356,10 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
     if (mode !== "sketch") return;
     const handleKey = (e: KeyboardEvent) => {
       // Mode switching shortcuts (only when not typing in input)
-      if (e.key === "d" && !e.metaKey && !e.ctrlKey && editMode !== "draw") {
+      if (e.key === "d" && !e.metaKey && !e.ctrlKey) {
         setEditMode("draw");
         setSelectedPoint(null);
+        setSelectedOpeningId(null);
         return;
       }
       if (e.key === "s" && !e.metaKey && !e.ctrlKey && editMode !== "select") {
@@ -261,21 +369,28 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
       }
 
       if (e.key === "Escape") {
-        if (editMode === "select" && selectedPoint) {
+        if (selectedOpeningId) {
+          setSelectedOpeningId(null);
+        } else if (editMode === "select" && selectedPoint) {
           setSelectedPoint(null);
+        } else if (editMode === "door" || editMode === "window") {
+          setEditMode("draw");
         } else {
           setActivePath([]);
         }
       } else if (e.key === "Enter" && activePath.length >= 2 && editMode === "draw") {
         setWallPaths((prev) => [...prev, [...activePath]]);
         setActivePath([]);
+      } else if ((e.key === "Delete" || e.key === "Backspace") && selectedOpeningId) {
+        e.preventDefault();
+        setOpenings((prev) => prev.filter((o) => o.id !== selectedOpeningId));
+        setSelectedOpeningId(null);
       } else if ((e.key === "Delete" || e.key === "Backspace") && editMode === "select" && selectedPoint) {
         e.preventDefault();
         setWallPaths((prev) => {
           const updated = prev.map((path) => [...path]);
           const path = updated[selectedPoint.pathIndex];
           if (path.length <= 2) {
-            // Remove entire path if only 2 points left
             updated.splice(selectedPoint.pathIndex, 1);
           } else {
             path.splice(selectedPoint.pointIndex, 1);
@@ -294,7 +409,7 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
     };
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [mode, activePath, wallPaths, editMode, selectedPoint]);
+  }, [mode, activePath, wallPaths, editMode, selectedPoint, selectedOpeningId]);
 
   // ─── 3D Generation (instant, client-side) ───────────────
   const handleGenerate3D = useCallback(() => {
@@ -358,6 +473,7 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
     setEditMode("draw");
     setOpenings([]);
     setCeilingHeight(2.8);
+    setSelectedOpeningId(null);
   }, []);
 
   // ═══════════════════════════════════════════════════════
@@ -455,33 +571,38 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
             <span className="font-mono text-[12px] font-medium">Floor Plan</span>
             <span className="font-mono text-[10px] text-muted-foreground">
               {totalWalls} wall{totalWalls !== 1 ? "s" : ""}
+              {openings.length > 0 && ` · ${openings.filter(o => o.type === "door").length}D ${openings.filter(o => o.type === "window").length}W`}
             </span>
           </div>
           <div className="flex items-center gap-2">
             {/* Edit mode toggle */}
             <div className="flex items-center gap-0.5">
-              <button
-                onClick={() => { setEditMode("draw"); setSelectedPoint(null); }}
-                className={`h-[24px] px-2 text-[10px] font-mono transition-colors ${
-                  editMode === "draw"
-                    ? "bg-foreground text-background"
-                    : "gallery-border text-muted-foreground hover:text-foreground"
-                }`}
-                title="Draw walls (D)"
-              >
-                Draw
-              </button>
-              <button
-                onClick={() => { setEditMode("select"); setActivePath([]); }}
-                className={`h-[24px] px-2 text-[10px] font-mono transition-colors ${
-                  editMode === "select"
-                    ? "bg-foreground text-background"
-                    : "gallery-border text-muted-foreground hover:text-foreground"
-                }`}
-                title="Select & move points (S)"
-              >
-                Select
-              </button>
+              {(
+                [
+                  { mode: "draw" as EditMode, label: "Draw", title: "Draw walls (D)" },
+                  { mode: "select" as EditMode, label: "Select", title: "Select & move points (S)" },
+                  { mode: "door" as EditMode, label: "Door", title: "Place door on wall" },
+                  { mode: "window" as EditMode, label: "Window", title: "Place window on wall" },
+                ] as const
+              ).map(({ mode: m, label, title }) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    setEditMode(m);
+                    if (m !== "select") setSelectedPoint(null);
+                    if (m !== "draw") setActivePath([]);
+                    setSelectedOpeningId(null);
+                  }}
+                  className={`h-[24px] px-2 text-[10px] font-mono transition-colors ${
+                    editMode === m
+                      ? "bg-foreground text-background"
+                      : "gallery-border text-muted-foreground hover:text-foreground"
+                  }`}
+                  title={title}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="w-px h-4 bg-border mx-1" />
             {/* Grid scale selector */}
@@ -565,6 +686,8 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
                 className={`flex-1 relative overflow-hidden ${
                   editMode === "select"
                     ? hoveredPoint ? "cursor-grab" : isDragging ? "cursor-grabbing" : "cursor-default"
+                    : editMode === "door" || editMode === "window"
+                    ? "cursor-copy"
                     : "cursor-crosshair"
                 }`}
                 style={{
@@ -665,6 +788,112 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
                       )}
                     </g>
                   )}
+
+                  {/* Openings (doors & windows) */}
+                  {openings.map((op) => {
+                    const coords = getOpeningSvgCoords(op);
+                    if (!coords) return null;
+                    const { x1, y1, x2, y2, cx, cy, nx, ny, halfW } = coords;
+                    const isSelected = selectedOpeningId === op.id;
+                    const isHovered = hoveredOpeningId === op.id;
+                    const highlight = isSelected || isHovered;
+                    const color = op.type === "door" ? "#b45309" : "#0369a1";
+                    const dimLabel = `${op.width.toFixed(1)}m × ${op.height.toFixed(1)}m`;
+
+                    if (op.type === "door") {
+                      // Door: gap in wall + swing arc
+                      const arcRadius = halfW * 0.9;
+                      return (
+                        <g key={op.id}
+                          onMouseEnter={() => setHoveredOpeningId(op.id)}
+                          onMouseLeave={() => setHoveredOpeningId(null)}
+                        >
+                          {/* White gap to "cut" the wall */}
+                          <line x1={x1} y1={y1} x2={x2} y2={y2}
+                            stroke="white" strokeWidth="7" />
+                          {/* Door frame lines */}
+                          <line x1={x1} y1={y1} x2={x2} y2={y2}
+                            stroke={color} strokeWidth={highlight ? "2.5" : "1.5"}
+                            strokeDasharray="none" opacity={highlight ? 1 : 0.8} />
+                          {/* Swing arc (quarter circle from hinge point) */}
+                          <path
+                            d={`M ${x2} ${y2} A ${arcRadius} ${arcRadius} 0 0 1 ${
+                              x1 + nx * arcRadius
+                            } ${y1 + ny * arcRadius}`}
+                            fill="none"
+                            stroke={color}
+                            strokeWidth="1"
+                            strokeDasharray="3 2"
+                            opacity={0.6}
+                          />
+                          {/* Selection ring */}
+                          {highlight && (
+                            <circle cx={cx} cy={cy} r={halfW + 4}
+                              fill="none" stroke={color} strokeWidth="1.5"
+                              strokeDasharray="4 2" opacity={0.5} />
+                          )}
+                          {/* Dimension label on hover */}
+                          {(isHovered || isSelected) && (
+                            <text x={cx} y={cy - halfW - 6}
+                              textAnchor="middle" fill={color}
+                              style={{ fontSize: "9px", fontFamily: "monospace" }}>
+                              {dimLabel}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    } else {
+                      // Window: gap in wall + double parallel lines
+                      const offset = 3;
+                      return (
+                        <g key={op.id}
+                          onMouseEnter={() => setHoveredOpeningId(op.id)}
+                          onMouseLeave={() => setHoveredOpeningId(null)}
+                        >
+                          {/* White gap */}
+                          <line x1={x1} y1={y1} x2={x2} y2={y2}
+                            stroke="white" strokeWidth="7" />
+                          {/* Outer line */}
+                          <line
+                            x1={x1 + nx * offset} y1={y1 + ny * offset}
+                            x2={x2 + nx * offset} y2={y2 + ny * offset}
+                            stroke={color} strokeWidth={highlight ? "2" : "1.5"} opacity={highlight ? 1 : 0.8}
+                          />
+                          {/* Inner line */}
+                          <line
+                            x1={x1 - nx * offset} y1={y1 - ny * offset}
+                            x2={x2 - nx * offset} y2={y2 - ny * offset}
+                            stroke={color} strokeWidth={highlight ? "2" : "1.5"} opacity={highlight ? 1 : 0.8}
+                          />
+                          {/* Cross lines connecting the two parallel lines at endpoints */}
+                          <line
+                            x1={x1 + nx * offset} y1={y1 + ny * offset}
+                            x2={x1 - nx * offset} y2={y1 - ny * offset}
+                            stroke={color} strokeWidth="1" opacity={0.6}
+                          />
+                          <line
+                            x1={x2 + nx * offset} y1={y2 + ny * offset}
+                            x2={x2 - nx * offset} y2={y2 - ny * offset}
+                            stroke={color} strokeWidth="1" opacity={0.6}
+                          />
+                          {/* Selection ring */}
+                          {highlight && (
+                            <circle cx={cx} cy={cy} r={halfW + 4}
+                              fill="none" stroke={color} strokeWidth="1.5"
+                              strokeDasharray="4 2" opacity={0.5} />
+                          )}
+                          {/* Dimension label */}
+                          {(isHovered || isSelected) && (
+                            <text x={cx} y={cy - halfW - 6}
+                              textAnchor="middle" fill={color}
+                              style={{ fontSize: "9px", fontFamily: "monospace" }}>
+                              {dimLabel}
+                            </text>
+                          )}
+                        </g>
+                      );
+                    }
+                  })}
                 </svg>
 
                 {/* Scale reference bar */}
@@ -687,10 +916,24 @@ const ModelViewerPlaceholder = ({ projectId }: Props) => {
                     </span>
                   </div>
                 )}
-                {editMode === "select" && wallPaths.length > 0 && !selectedPoint && (
+                {editMode === "select" && wallPaths.length > 0 && !selectedPoint && !selectedOpeningId && (
                   <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-none">
                     <span className="font-mono text-[10px] text-muted-foreground bg-background/80 px-2 py-1">
-                      Click a point to select — drag to move — Delete to remove
+                      Click a point or opening to select — drag to move — Delete to remove
+                    </span>
+                  </div>
+                )}
+                {(editMode === "door" || editMode === "window") && wallPaths.length > 0 && (
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-none">
+                    <span className="font-mono text-[10px] text-muted-foreground bg-background/80 px-2 py-1">
+                      Click on a wall to place a {editMode} — Esc to cancel
+                    </span>
+                  </div>
+                )}
+                {(editMode === "door" || editMode === "window") && wallPaths.length === 0 && (
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-none">
+                    <span className="font-mono text-[10px] text-muted-foreground bg-background/80 px-2 py-1">
+                      Draw walls first, then place {editMode}s
                     </span>
                   </div>
                 )}
