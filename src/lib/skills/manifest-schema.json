@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SkillManifest",
+  "description": "Schema for Clawd Studio skill plugin manifest (skill.json)",
+  "type": "object",
+  "required": ["slug", "name", "version", "description", "disciplines", "requiredSecrets", "agentTools"],
+  "properties": {
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9-]+$",
+      "description": "Unique skill identifier (lowercase, hyphens)"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+",
+      "description": "Semantic version"
+    },
+    "description": {
+      "type": "string"
+    },
+    "disciplines": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["interior", "architectural", "landscape", "industrial"]
+      },
+      "minItems": 1
+    },
+    "requiredSecrets": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "requiredTables": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "edgeFunctions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "uiComponents": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "optional": {
+      "type": "boolean"
+    },
+    "defaultEnabled": {
+      "type": "boolean"
+    },
+    "agentTools": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "description", "parameters"],
+        "properties": {
+          "name": { "type": "string", "pattern": "^[a-z_][a-z0-9_]*$" },
+          "description": { "type": "string" },
+          "parameters": { "type": "object" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "hooks": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "onBriefAnalyzed",
+          "onSessionComplete",
+          "onFloorPlanUpdated",
+          "onRenderGenerated",
+          "onProductsFound"
+        ]
+      }
+    },
+    "configSchema": {
+      "type": "object"
+    }
+  },
+  "additionalProperties": false
+}

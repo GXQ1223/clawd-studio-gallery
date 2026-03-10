@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { SkillRegistry } from "./skills/registry";
 
 // Agent types
 export type AgentType = "designer" | "plan" | "3d" | "render" | "sourcing" | "section" | "presentation";
@@ -90,13 +91,14 @@ export class DesignerAgent {
   private projectType: string;
   private referenceImageUrls: string[];
   private floorPlanUrl: string | null;
+  private registry?: SkillRegistry;
 
   private conversationHistory: string[];
 
   constructor(
     public projectId: string,
     public userBrief: string,
-    opts?: { onProgress?: (msg: string) => void; userId?: string; conversationHistory?: string[]; projectType?: string; referenceImageUrls?: string[]; floorPlanUrl?: string }
+    opts?: { onProgress?: (msg: string) => void; userId?: string; conversationHistory?: string[]; projectType?: string; referenceImageUrls?: string[]; floorPlanUrl?: string; registry?: SkillRegistry }
   ) {
     this.onProgress = opts?.onProgress;
     this.userId = opts?.userId;
@@ -104,6 +106,7 @@ export class DesignerAgent {
     this.projectType = opts?.projectType || "interior";
     this.referenceImageUrls = opts?.referenceImageUrls || [];
     this.floorPlanUrl = opts?.floorPlanUrl || null;
+    this.registry = opts?.registry;
   }
 
   private emit(msg: string) {
@@ -114,7 +117,8 @@ export class DesignerAgent {
   async runFullOrchestration(): Promise<OrchestrationResult> {
     this.emit("Analyzing brief…");
     const analysis = await this.analyzeBrief();
-    
+    await this.registry?.fireHook('onBriefAnalyzed', analysis, this.buildSkillContext());
+
     this.emit(`Identified ${analysis.projectType} project — ${analysis.style || "contemporary"} style`);
     
     this.emit("Assembling specialist team…");
@@ -123,12 +127,46 @@ export class DesignerAgent {
 
     // Execute render agent
     this.emit(this.floorPlanUrl ? "Generating spatially-conditioned renders…" : "Generating renders via Gemini AI…");
-    const renders = await this.executeRenderAgent(analysis);
+    let renders: RenderResult[];
+    const hasRenderTool = this.registry?.getAllToolDefinitions().some(t => t.name === 'generate_render');
+    if (this.registry && hasRenderTool) {
+      const result = await this.registry.executeTool('generate_render', {
+        style: analysis.style || 'contemporary',
+        description: this.userBrief,
+        project_id: this.projectId,
+        project_type: this.projectType,
+        reference_image_urls: this.referenceImageUrls,
+        floor_plan_url: this.floorPlanUrl,
+      }, this.buildSkillContext());
+      renders = result.success && result.data?.renders ? result.data.renders : await this.executeRenderAgent(analysis);
+    } else {
+      renders = await this.executeRenderAgent(analysis);
+    }
     this.emit(`${renders.length} perspectives generated`);
 
     // Execute sourcing agent
     this.emit("Sourcing products via SourcerAI…");
-    const sourcingResult = await this.executeSourcingAgent(analysis);
+    let sourcingResult: { products: ProductResult[]; shoppingList: { total: number; item_count: number; budget_remaining: number | null } };
+    const hasSearchTool = this.registry?.getAllToolDefinitions().some(t => t.name === 'search_products');
+    if (this.registry && hasSearchTool) {
+      const result = await this.registry.executeTool('search_products', {
+        style: analysis.style || 'contemporary',
+        budget: analysis.budget,
+        project_id: this.projectId,
+        description: this.userBrief,
+        project_type: this.projectType,
+      }, this.buildSkillContext());
+      if (result.success && result.data?.products) {
+        sourcingResult = {
+          products: result.data.products,
+          shoppingList: result.data.shopping_list || { total: 0, item_count: 0, budget_remaining: null },
+        };
+      } else {
+        sourcingResult = await this.executeSourcingAgent(analysis);
+      }
+    } else {
+      sourcingResult = await this.executeSourcingAgent(analysis);
+    }
     this.emit(`${sourcingResult.products.length} products found — $${sourcingResult.shoppingList.total.toLocaleString()} total`);
 
     // Mark all agents completed and persist results
@@ -143,7 +181,12 @@ export class DesignerAgent {
     }
     this.emit("All agents completed ✦");
 
-    return { renders, ...sourcingResult };
+    const finalResult = { renders, ...sourcingResult };
+    for (const agent of agents) {
+      await this.registry?.fireHook('onSessionComplete', agent, finalResult, this.buildSkillContext());
+    }
+
+    return finalResult;
   }
 
   /** Call generate-render edge function (Gemini AI), with mock-render fallback */
@@ -237,11 +280,15 @@ export class DesignerAgent {
   /** Analyze user brief via LLM edge function (falls back to regex if unavailable) */
   async analyzeBrief(): Promise<BriefAnalysis> {
     try {
+      // Collect tool definitions from registry to pass to the LLM
+      const toolDefinitions = this.registry?.getAllToolDefinitions() ?? [];
+
       const { data, error } = await supabase.functions.invoke("analyze-brief", {
         body: {
           brief: this.userBrief,
           conversation_history: this.conversationHistory,
           project_type: this.projectType,
+          toolDefinitions: toolDefinitions.length > 0 ? toolDefinitions : undefined,
         },
       });
 
@@ -262,6 +309,32 @@ export class DesignerAgent {
         dimensions: data.analysis.dimensions || null,
         clientPreferences: data.analysis.clientPreferences || [],
       };
+
+      // Execute any tool-based execution plan returned by the LLM
+      if (data.executionPlan && Array.isArray(data.executionPlan) && this.registry) {
+        const context = this.buildSkillContext();
+        const planResults: Array<{ tool: string; result: any }> = [];
+
+        for (const step of data.executionPlan) {
+          if (step.tool && step.params) {
+            try {
+              this.emit(`Executing skill tool: ${step.tool}`);
+              const result = await this.registry.executeTool(step.tool, step.params, context);
+              planResults.push({ tool: step.tool, result });
+            } catch (toolErr) {
+              console.warn(`Execution plan step "${step.tool}" failed:`, toolErr);
+              planResults.push({ tool: step.tool, result: { success: false, error: String(toolErr) } });
+            }
+          }
+        }
+
+        // Store execution plan results in the analysis message metadata
+        await this.postMessage(
+          "status_update",
+          `Execution plan completed: ${planResults.length} tool(s) executed`,
+          { executionPlanResults: planResults }
+        );
+      }
 
       const extras = [
         analysis.materials.length ? `materials: ${analysis.materials.join(", ")}` : null,
@@ -406,6 +479,19 @@ export class DesignerAgent {
     if (status === "completed") update.completed_at = new Date().toISOString();
     if (resultData) update.result_data = resultData;
     await supabase.from("agent_sessions").update(update).eq("id", sessionId);
+  }
+
+  private buildSkillContext() {
+    return {
+      projectId: this.projectId,
+      userId: this.userId || '',
+      projectType: this.projectType as any,
+      supabase,
+      config: {},
+      addFeedEntry: (entry: any) => this.emit(typeof entry === 'string' ? entry : JSON.stringify(entry)),
+      getEnabledSkills: () => this.registry?.getEnabledSlugs() || [],
+      emitEvent: () => {},
+    };
   }
 
   // --- Private analysis helpers ---

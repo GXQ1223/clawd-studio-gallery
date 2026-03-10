@@ -1,0 +1,28 @@
+{
+  "slug": "product-sourcing",
+  "name": "Product Sourcing",
+  "version": "1.0.0",
+  "description": "AI-curated product recommendations from design catalogs",
+  "disciplines": ["interior", "architectural", "landscape"],
+  "requiredSecrets": ["OPENAI_API_KEY"],
+  "edgeFunctions": ["mock-sourcing"],
+  "optional": false,
+  "defaultEnabled": true,
+  "agentTools": [
+    {
+      "name": "search_products",
+      "description": "Search for furniture and decor products matching a design style and budget",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "style": { "type": "string", "description": "Design style to match" },
+          "budget": { "type": "number", "description": "Budget in USD" },
+          "description": { "type": "string", "description": "Project description for context" },
+          "project_type": { "type": "string", "description": "Project type" }
+        },
+        "required": ["style"]
+      }
+    }
+  ],
+  "hooks": ["onRenderGenerated"]
+}

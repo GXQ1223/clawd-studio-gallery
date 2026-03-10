@@ -1,0 +1,47 @@
+{
+  "slug": "floor-plan-3d",
+  "name": "3D Floor Plan Editor",
+  "version": "1.0.0",
+  "description": "Interactive 2D/3D floor plan editor with wall drawing, openings, materials, and GLB export",
+  "disciplines": ["interior", "architectural"],
+  "requiredSecrets": [],
+  "edgeFunctions": ["generate-3d-model"],
+  "optional": false,
+  "defaultEnabled": true,
+  "agentTools": [
+    {
+      "name": "export_floor_plan_view",
+      "description": "Export a top-down orthographic view of the floor plan as PNG",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_labels": { "type": "boolean", "description": "Include room labels and dimensions" },
+          "include_furniture": { "type": "boolean", "description": "Include furniture in the export" }
+        }
+      }
+    },
+    {
+      "name": "get_room_data",
+      "description": "Get structured data about the floor plan rooms, walls, and dimensions",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      }
+    },
+    {
+      "name": "size_furniture",
+      "description": "Update furniture dimensions in the 3D scene",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "furniture_id": { "type": "string" },
+          "width": { "type": "number" },
+          "depth": { "type": "number" },
+          "height": { "type": "number" }
+        },
+        "required": ["furniture_id"]
+      }
+    }
+  ],
+  "hooks": ["onBriefAnalyzed", "onRenderGenerated"]
+}

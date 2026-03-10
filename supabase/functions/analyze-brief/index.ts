@@ -172,7 +172,7 @@ serve(async (req) => {
       );
     }
 
-    const { brief, conversation_history } = await req.json();
+    const { brief, conversation_history, toolDefinitions } = await req.json();
 
     if (!brief || typeof brief !== "string" || brief.length > 10_000) {
       throw new Error("Missing or invalid 'brief' field (max 10,000 characters)");
@@ -195,8 +195,13 @@ serve(async (req) => {
     }
 
     // Build messages for the LLM
+    const hasTools = Array.isArray(toolDefinitions) && toolDefinitions.length > 0;
+    const toolPlanningAddendum = hasTools
+      ? `\n\nYou also have access to the following tools that can be invoked:\n${JSON.stringify(toolDefinitions, null, 2)}\n\nIn addition to the analysis JSON, include an "executionPlan" field: an ordered array of { "tool": "<tool_name>", "params": { ... }, "rationale": "<why this tool>" } steps that should be executed to fulfill this brief. Only include tools from the list above.`
+      : "";
+
     const messages: { role: string; content: string }[] = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: SYSTEM_PROMPT + toolPlanningAddendum },
     ];
 
     // Include conversation history for richer context (validated)
@@ -254,7 +259,11 @@ serve(async (req) => {
       throw new Error("Empty response from LLM");
     }
 
-    const analysis: BriefAnalysis = JSON.parse(content);
+    const parsed = JSON.parse(content);
+
+    // Separate executionPlan from analysis fields
+    const { executionPlan, ...analysisFields } = parsed;
+    const analysis: BriefAnalysis = analysisFields;
 
     // Validate required fields and set defaults
     if (!analysis.projectType) analysis.projectType = "residential";
@@ -266,12 +275,19 @@ serve(async (req) => {
     if (!Array.isArray(analysis.materials)) analysis.materials = [];
     if (!Array.isArray(analysis.clientPreferences)) analysis.clientPreferences = [];
 
+    const responseBody: Record<string, unknown> = {
+      success: true,
+      analysis,
+      engine: "gpt-4o-mini",
+    };
+
+    // Include execution plan if tool definitions were provided and LLM returned a plan
+    if (hasTools && Array.isArray(executionPlan)) {
+      responseBody.executionPlan = executionPlan;
+    }
+
     return new Response(
-      JSON.stringify({
-        success: true,
-        analysis,
-        engine: "gpt-4o-mini",
-      }),
+      JSON.stringify(responseBody),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

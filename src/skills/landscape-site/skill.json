@@ -1,0 +1,48 @@
+{
+  "slug": "landscape-site",
+  "name": "Landscape Site Planner",
+  "version": "1.0.0",
+  "description": "SVG-based site boundary and planting zone editor for landscape design projects",
+  "disciplines": ["landscape"],
+  "requiredSecrets": [],
+  "optional": false,
+  "defaultEnabled": true,
+  "agentTools": [
+    {
+      "name": "draw_site_boundary",
+      "description": "Define the site boundary polygon for the landscape plan",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vertices": { "type": "array", "items": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } }, "description": "Polygon vertices in meters" }
+        },
+        "required": ["vertices"]
+      }
+    },
+    {
+      "name": "add_planting_zone",
+      "description": "Add a planting zone to the site plan",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone_type": { "type": "string", "enum": ["lawn", "shrubs", "trees", "hardscape", "water"], "description": "Type of planting zone" },
+          "vertices": { "type": "array", "items": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" } } } },
+          "label": { "type": "string" }
+        },
+        "required": ["zone_type", "vertices"]
+      }
+    },
+    {
+      "name": "generate_site_plan_render",
+      "description": "Generate a photorealistic render of the landscape site plan",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "style": { "type": "string", "description": "Landscape style" },
+          "season": { "type": "string", "enum": ["spring", "summer", "fall", "winter"] }
+        }
+      }
+    }
+  ],
+  "hooks": ["onBriefAnalyzed"]
+}

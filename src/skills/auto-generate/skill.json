@@ -1,0 +1,27 @@
+{
+  "slug": "auto-generate",
+  "name": "Auto Generate",
+  "version": "1.0.0",
+  "description": "Schedule automatic render regeneration via cron jobs",
+  "disciplines": ["interior", "architectural", "landscape", "industrial"],
+  "requiredSecrets": [],
+  "edgeFunctions": ["agent-cron"],
+  "optional": true,
+  "defaultEnabled": false,
+  "agentTools": [
+    {
+      "name": "schedule_auto_generate",
+      "description": "Schedule or cancel automatic render regeneration on a cron interval",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean", "description": "Enable or disable auto-generation" },
+          "interval": { "type": "string", "description": "Cron interval (e.g. '30m', '1h', '2h')" },
+          "session_id": { "type": "string", "description": "Agent session ID to toggle cron on" }
+        },
+        "required": ["enabled"]
+      }
+    }
+  ],
+  "hooks": ["onSessionComplete"]
+}

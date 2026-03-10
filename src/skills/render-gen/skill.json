@@ -1,0 +1,29 @@
+{
+  "slug": "render-gen",
+  "name": "Render Generation",
+  "version": "1.0.0",
+  "description": "AI-powered design render generation using Gemini with ControlNet fallback",
+  "disciplines": ["interior", "architectural", "landscape", "industrial"],
+  "requiredSecrets": ["GEMINI_API_KEY"],
+  "edgeFunctions": ["generate-render", "mock-render"],
+  "optional": false,
+  "defaultEnabled": true,
+  "agentTools": [
+    {
+      "name": "generate_render",
+      "description": "Generate photorealistic design renders from a brief description and optional floor plan",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "style": { "type": "string", "description": "Design style (e.g. modern, japandi, scandinavian)" },
+          "description": { "type": "string", "description": "Design brief description" },
+          "project_type": { "type": "string", "description": "Project type (residential, commercial, etc.)" },
+          "floor_plan_url": { "type": "string", "description": "Optional floor plan image URL for spatial conditioning" },
+          "reference_image_urls": { "type": "array", "items": { "type": "string" }, "description": "Reference images for style transfer" }
+        },
+        "required": ["style", "description"]
+      }
+    }
+  ],
+  "hooks": ["onFloorPlanUpdated"]
+}

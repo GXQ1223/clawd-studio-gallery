@@ -1,0 +1,23 @@
+{
+  "slug": "hello-world",
+  "name": "Hello World",
+  "version": "1.0.0",
+  "description": "A minimal example skill demonstrating the SkillPlugin interface",
+  "disciplines": ["interior", "architectural", "landscape", "industrial"],
+  "requiredSecrets": [],
+  "optional": true,
+  "defaultEnabled": false,
+  "agentTools": [
+    {
+      "name": "say_hello",
+      "description": "Returns a friendly greeting to the user",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "Name to greet" }
+        }
+      }
+    }
+  ],
+  "hooks": ["onBriefAnalyzed"]
+}
