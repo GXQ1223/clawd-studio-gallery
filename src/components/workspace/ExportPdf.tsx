@@ -9,6 +9,16 @@ interface Props {
   results: OrchestrationResult | null;
 }
 
+/** Escape HTML entities to prevent XSS when building HTML strings */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
 /** Generate a print-friendly spec sheet and trigger browser print dialog */
 const ExportPdf = ({ projectName, projectType, budget, dimensions, results }: Props) => {
   const handleExport = useCallback(() => {
@@ -22,8 +32,8 @@ const ExportPdf = ({ projectName, projectType, budget, dimensions, results }: Pr
       .map(
         (r) => `
         <div style="break-inside: avoid; margin-bottom: 16px;">
-          <img src="${r.url}" alt="${r.label}" style="width: 100%; max-height: 300px; object-fit: cover; border: 1px solid #e0e0e0;" crossorigin="anonymous" />
-          <p style="font-size: 11px; color: #666; margin-top: 4px;">${r.label} — ${r.style}</p>
+          <img src="${escapeHtml(r.url)}" alt="${escapeHtml(r.label)}" style="width: 100%; max-height: 300px; object-fit: cover; border: 1px solid #e0e0e0;" crossorigin="anonymous" />
+          <p style="font-size: 11px; color: #666; margin-top: 4px;">${escapeHtml(r.label)} — ${escapeHtml(r.style)}</p>
         </div>`
       )
       .join("");
@@ -32,19 +42,24 @@ const ExportPdf = ({ projectName, projectType, budget, dimensions, results }: Pr
       .map(
         (p) => `
         <tr>
-          <td style="padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 11px;">${p.name}</td>
-          <td style="padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 11px; color: #666;">${p.brand}</td>
-          <td style="padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 11px;">${p.category}</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 11px;">${escapeHtml(p.name)}</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 11px; color: #666;">${escapeHtml(p.brand)}</td>
+          <td style="padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 11px;">${escapeHtml(p.category)}</td>
           <td style="padding: 6px 8px; border-bottom: 1px solid #eee; font-size: 11px; text-align: right;">$${p.price.toLocaleString()}</td>
         </tr>`
       )
       .join("");
 
+    const safeProjectName = escapeHtml(projectName);
+    const safeProjectType = projectType ? escapeHtml(projectType) : "";
+    const safeDimensions = dimensions ? escapeHtml(dimensions) : "";
+    const safeBudget = budget ? escapeHtml(budget) : "";
+
     const html = `
       <!DOCTYPE html>
       <html>
       <head>
-        <title>${projectName} — Specification Sheet</title>
+        <title>${safeProjectName} — Specification Sheet</title>
         <style>
           @media print { body { margin: 0; } }
           body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 32px; color: #1a1a1a; }
@@ -60,11 +75,11 @@ const ExportPdf = ({ projectName, projectType, budget, dimensions, results }: Pr
         </style>
       </head>
       <body>
-        <h1>${projectName}</h1>
+        <h1>${safeProjectName}</h1>
         <div class="meta">
-          ${projectType ? `<span>Type: ${projectType}</span>` : ""}
-          ${dimensions ? `<span>Dimensions: ${dimensions}</span>` : ""}
-          ${budget ? `<span>Budget: ${budget}</span>` : ""}
+          ${safeProjectType ? `<span>Type: ${safeProjectType}</span>` : ""}
+          ${safeDimensions ? `<span>Dimensions: ${safeDimensions}</span>` : ""}
+          ${safeBudget ? `<span>Budget: ${safeBudget}</span>` : ""}
           <span>Generated: ${new Date().toLocaleDateString()}</span>
         </div>
 

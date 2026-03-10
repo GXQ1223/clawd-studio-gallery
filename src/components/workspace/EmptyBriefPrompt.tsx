@@ -27,9 +27,14 @@ const EmptyBriefPrompt = ({ projectName, onSubmitBrief, onFilesUploaded, project
 
   const handleFiles = useCallback(async (files: FileList) => {
     if (!projectId) return;
+    const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]);
+    const MIME_EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "application/pdf": "pdf" };
+    const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
     const urls: string[] = [];
     for (const file of Array.from(files)) {
-      const ext = file.name.split(".").pop() || "jpg";
+      if (!ALLOWED_TYPES.has(file.type)) { toast.error(`Unsupported file type: ${file.type || file.name}`); continue; }
+      if (file.size > MAX_FILE_SIZE) { toast.error(`File too large (max 50MB): ${file.name}`); continue; }
+      const ext = MIME_EXT[file.type] || "bin";
       const path = `${projectId}/${crypto.randomUUID()}.${ext}`;
       const { error } = await supabase.storage.from("project-assets").upload(path, file);
       if (error) { toast.error(`Upload failed: ${error.message}`); continue; }

@@ -1,6 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-const ALLOWED_ORIGIN = Deno.env.get("CORS_ALLOWED_ORIGIN") || "*";
+const ALLOWED_ORIGIN = Deno.env.get("CORS_ALLOWED_ORIGIN") || (console.warn("CORS_ALLOWED_ORIGIN not set — defaulting to wildcard. Set this in production."), "*");
 const corsHeaders = {
   "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Headers":
@@ -58,17 +58,22 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Verify cron secret to prevent unauthorized access
+    // Verify cron secret to prevent unauthorized access (required)
     const cronSecret = Deno.env.get("CRON_SECRET");
-    if (cronSecret) {
-      const authHeader = req.headers.get("authorization") || "";
-      const token = authHeader.replace(/^Bearer\s+/i, "");
-      if (token !== cronSecret) {
-        return new Response(
-          JSON.stringify({ error: "Unauthorized" }),
-          { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-        );
-      }
+    if (!cronSecret) {
+      console.error("CRON_SECRET environment variable is not set");
+      return new Response(
+        JSON.stringify({ error: "Service misconfigured" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const authHeader = req.headers.get("authorization") || "";
+    const token = authHeader.replace(/^Bearer\s+/i, "");
+    if (!token || token !== cronSecret) {
+      return new Response(
+        JSON.stringify({ error: "Unauthorized" }),
+        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;

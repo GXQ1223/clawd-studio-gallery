@@ -91,11 +91,16 @@ const ProjectWorkspace = () => {
       const brief = text || "Modern design with renders and furniture sourcing";
 
       // Upload attachments to Supabase Storage and collect public URLs
+      const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]);
+      const MIME_EXT: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "image/gif": "gif", "application/pdf": "pdf" };
+      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
       const referenceImageUrls: string[] = [];
       if (attachments.length > 0 && id) {
         for (const att of attachments) {
+          if (!ALLOWED_TYPES.has(att.file.type)) { toast.error(`Unsupported file type: ${att.file.name}`); continue; }
+          if (att.file.size > MAX_FILE_SIZE) { toast.error(`File too large (max 50MB): ${att.file.name}`); continue; }
           try {
-            const ext = att.file.name.split(".").pop() || "png";
+            const ext = MIME_EXT[att.file.type] || "png";
             const filePath = `${id}/references/${Date.now()}-${att.id}.${ext}`;
             const { error } = await supabase.storage
               .from("project-assets")
@@ -216,7 +221,8 @@ const ProjectWorkspace = () => {
     try {
       let token = project.share_token;
       if (!token) {
-        token = crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+        const bytes = crypto.getRandomValues(new Uint8Array(24));
+        token = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
         await updateProject.mutateAsync({ id, share_token: token } as Partial<Project> & { id: string });
       }
       const shareUrl = `${window.location.origin}/share/${token}`;
