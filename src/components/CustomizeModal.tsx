@@ -75,15 +75,29 @@ const CustomizeModal = ({ open, onOpenChange, onGenerate }: Props) => {
     onGenerate(result);
   };
 
+  // Revoke previous Object URL before setting a new one, and on unmount
+  const setImageWithCleanup = useCallback((url: string | null) => {
+    setImageFile((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return url;
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      // Clean up any remaining Object URL on unmount
+      setImageFile((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
+    };
+  }, []);
+
   // Image handlers
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (file?.type.startsWith("image/")) {
-      const url = URL.createObjectURL(file);
-      setImageFile(url);
+      setImageWithCleanup(URL.createObjectURL(file));
     }
-  }, []);
+  }, [setImageWithCleanup]);
 
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const items = e.clipboardData.items;
@@ -91,16 +105,16 @@ const CustomizeModal = ({ open, onOpenChange, onGenerate }: Props) => {
       if (item.type.startsWith("image/")) {
         const file = item.getAsFile();
         if (file) {
-          setImageFile(URL.createObjectURL(file));
+          setImageWithCleanup(URL.createObjectURL(file));
         }
       }
     }
-  }, []);
+  }, [setImageWithCleanup]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file?.type.startsWith("image/")) {
-      setImageFile(URL.createObjectURL(file));
+      setImageWithCleanup(URL.createObjectURL(file));
     }
   };
 
@@ -266,7 +280,7 @@ const CustomizeModal = ({ open, onOpenChange, onGenerate }: Props) => {
                 <div className="relative border border-border rounded-lg overflow-hidden">
                   <img src={imageFile} alt="Reference" className="w-full h-[160px] object-cover" />
                   <button
-                    onClick={() => setImageFile(null)}
+                    onClick={() => setImageWithCleanup(null)}
                     className="absolute top-2 right-2 w-6 h-6 bg-foreground text-background rounded-full flex items-center justify-center text-[12px] hover:opacity-80"
                   >
                     ×

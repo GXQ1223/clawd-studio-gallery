@@ -253,12 +253,23 @@ serve(async (req) => {
       throw new Error("GEMINI_API_KEY is not configured. Add it to your backend secrets.");
     }
 
+    // Limit request body size (1MB)
+    const contentLength = parseInt(req.headers.get("content-length") || "0", 10);
+    if (contentLength > 1_048_576) {
+      return new Response(
+        JSON.stringify({ error: "Request body too large (max 1MB)" }),
+        { status: 413, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
     const { style, description, project_id, project_type } = await req.json();
 
     // Input validation
     const errors: string[] = [];
     if (!project_id || typeof project_id !== "string") {
       errors.push("project_id is required and must be a non-empty string");
+    } else if (!/^[a-f0-9-]+$/i.test(project_id)) {
+      errors.push("project_id must be a valid UUID format");
     }
     if (description && typeof description === "string" && description.length > 2000) {
       errors.push("description must be under 2,000 characters");

@@ -444,8 +444,8 @@ serve(async (req) => {
     const gridMeters = GRID_METERS[grid_scale] || 0.3048;
     const scaleMeters = gridMeters / gridPx;
 
-    const height = wall_height || 2.8;
-    const thickness = wall_thickness || 0.15;
+    const height = typeof wall_height === "number" && wall_height > 0 && wall_height <= 50 ? wall_height : 2.8;
+    const thickness = typeof wall_thickness === "number" && wall_thickness > 0 && wall_thickness <= 5 ? wall_thickness : 0.15;
     const validOpenings: Opening[] = Array.isArray(openings) ? openings.slice(0, 200) : [];
 
     console.log(`Building 3D: ${paths.length} paths, ${validOpenings.length} openings, h=${height}m`);

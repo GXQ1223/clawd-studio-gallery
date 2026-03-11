@@ -67,6 +67,16 @@ const AgentInputBar = ({
     return () => document.removeEventListener("mousedown", handler);
   }, [menuOpen]);
 
+  // Revoke remaining Object URLs on unmount
+  useEffect(() => {
+    return () => {
+      setAttachments((prev) => {
+        prev.forEach((a) => URL.revokeObjectURL(a.url));
+        return [];
+      });
+    };
+  }, []);
+
   const addFiles = useCallback((files: FileList | null) => {
     if (!files) return;
     const newAttachments: Attachment[] = Array.from(files).map((file) => ({

@@ -90,12 +90,15 @@ async function extractStyleEmbedding(
     image_url: { url, detail: "low" as const },
   }));
 
+  const styleController = new AbortController();
+  const styleTimeout = setTimeout(() => styleController.abort(), 30_000);
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
+    signal: styleController.signal,
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [
@@ -127,6 +130,7 @@ Return ONLY the JSON object. No markdown.`,
       max_tokens: 600,
     }),
   });
+  clearTimeout(styleTimeout);
 
   if (!response.ok) {
     console.error("Style extraction failed:", await response.text());
@@ -219,6 +223,8 @@ async function generateWithControlNet(
 
   // Use Replicate's ControlNet SDXL model with scribble/lineart preprocessor
   // The floor plan acts as the structural conditioning image
+  const ctrlNetController = new AbortController();
+  const ctrlNetTimer = setTimeout(() => ctrlNetController.abort(), 120_000);
   const response = await fetch("https://api.replicate.com/v1/predictions", {
     method: "POST",
     headers: {
@@ -226,6 +232,7 @@ async function generateWithControlNet(
       "Content-Type": "application/json",
       Prefer: "wait",
     },
+    signal: ctrlNetController.signal,
     body: JSON.stringify({
       version: "4c67958ef55e87e559b3c961be1b1b26e8d213de1d5484f6a3b850189c64f1f8",
       input: {
@@ -240,6 +247,7 @@ async function generateWithControlNet(
       },
     }),
   });
+  clearTimeout(ctrlNetTimer);
 
   if (!response.ok) {
     const errText = await response.text();
@@ -257,9 +265,13 @@ async function generateWithControlNet(
     const deadline = Date.now() + 120_000;
     while (Date.now() < deadline) {
       await new Promise((r) => setTimeout(r, 2000));
+      const pollCtrl = new AbortController();
+      const pollTimer = setTimeout(() => pollCtrl.abort(), 10_000);
       const pollRes = await fetch(pollUrl, {
         headers: { Authorization: `Bearer ${replicateKey}` },
+        signal: pollCtrl.signal,
       });
+      clearTimeout(pollTimer);
       const pollData = await pollRes.json();
       if (pollData.status === "succeeded") {
         output = pollData.output;
@@ -527,6 +539,8 @@ serve(async (req) => {
         hasRefImages,
         styleEmbedding
       );
+      const sdxlController = new AbortController();
+      const sdxlTimer = setTimeout(() => sdxlController.abort(), 120_000);
       const res = await fetch("https://api.replicate.com/v1/predictions", {
         method: "POST",
         headers: {
@@ -534,6 +548,7 @@ serve(async (req) => {
           "Content-Type": "application/json",
           Prefer: "wait",
         },
+        signal: sdxlController.signal,
         body: JSON.stringify({
           version: "39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
           input: {
@@ -545,6 +560,7 @@ serve(async (req) => {
           },
         }),
       });
+      clearTimeout(sdxlTimer);
       if (!res.ok) {
         const errText = await res.text();
         console.error(`Replicate SDXL error (${res.status}):`, errText);
@@ -556,9 +572,13 @@ serve(async (req) => {
         const deadline = Date.now() + 120_000;
         while (Date.now() < deadline) {
           await new Promise((r) => setTimeout(r, 2000));
+          const sdxlPollCtrl = new AbortController();
+          const sdxlPollTimer = setTimeout(() => sdxlPollCtrl.abort(), 10_000);
           const poll = await fetch(prediction.urls.get, {
             headers: { Authorization: `Bearer ${replicateKey}` },
+            signal: sdxlPollCtrl.signal,
           });
+          clearTimeout(sdxlPollTimer);
           const pd = await poll.json();
           if (pd.status === "succeeded") { output = pd.output; break; }
           if (pd.status === "failed" || pd.status === "canceled") {
