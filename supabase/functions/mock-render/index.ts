@@ -360,12 +360,18 @@ async function uploadToStorage(
   projectId: string,
   index: number
 ): Promise<string> {
-  // Download the generated image
-  const imageResponse = await fetch(imageUrl);
+  // Download the generated image (with timeout and size limit)
+  const dlController = new AbortController();
+  const dlTimer = setTimeout(() => dlController.abort(), 30_000);
+  const imageResponse = await fetch(imageUrl, { signal: dlController.signal });
+  clearTimeout(dlTimer);
   if (!imageResponse.ok) {
     throw new Error(`Failed to download image: ${imageResponse.status}`);
   }
   const imageBlob = await imageResponse.blob();
+  if (imageBlob.size > 20_000_000) {
+    throw new Error("Downloaded image too large (max 20MB)");
+  }
   const arrayBuffer = await imageBlob.arrayBuffer();
 
   const filePath = `${projectId}/renders/${Date.now()}-${index}.png`;
@@ -405,7 +411,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const supabaseAuth = createClient(supabaseUrl, supabaseServiceKey);
-    const token = authHeader.replace("Bearer ", "");
+    const token = authHeader.replace(/^Bearer\s+/i, "");
     const { data: { user }, error: authError } = await supabaseAuth.auth.getUser(token);
     if (authError || !user) {
       return new Response(
@@ -495,10 +501,14 @@ serve(async (req) => {
     // Step: Extract style embedding from reference images (CLIP-like style transfer)
     let styleEmbedding: StyleEmbedding | null = null;
     if (hasRefImages && openaiKey) {
-      console.log(`Extracting style embedding from ${reference_image_urls.length} reference image(s)…`);
-      styleEmbedding = await extractStyleEmbedding(openaiKey, reference_image_urls);
-      if (styleEmbedding) {
-        console.log("Style embedding extracted:", styleEmbedding.summary);
+      try {
+        console.log(`Extracting style embedding from ${reference_image_urls.length} reference image(s)…`);
+        styleEmbedding = await extractStyleEmbedding(openaiKey, reference_image_urls);
+        if (styleEmbedding) {
+          console.log("Style embedding extracted:", styleEmbedding.summary);
+        }
+      } catch (err) {
+        console.warn("Style embedding extraction failed, continuing without it:", err);
       }
     }
 
