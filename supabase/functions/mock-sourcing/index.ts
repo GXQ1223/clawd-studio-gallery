@@ -107,12 +107,15 @@ async function curateWithLLM(
       })), null, 2)}`
     : "\n\nNo catalog products found — recommend 5 real products from known retailers.";
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
   const response = await fetch("https://api.openai.com/v1/chat/completions", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
+    signal: controller.signal,
     body: JSON.stringify({
       model: "gpt-4o-mini",
       messages: [
@@ -126,6 +129,7 @@ async function curateWithLLM(
       max_tokens: 2000,
     }),
   });
+  clearTimeout(timeout);
 
   if (!response.ok) {
     const errText = await response.text();

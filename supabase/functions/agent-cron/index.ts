@@ -123,14 +123,18 @@ Deno.serve(async (req) => {
           if (rd.budget) body.budget = rd.budget;
         }
 
+        const cronFetchCtrl = new AbortController();
+        const cronFetchTimer = setTimeout(() => cronFetchCtrl.abort(), 120_000);
         const response = await fetch(functionUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${anonKey}`,
           },
+          signal: cronFetchCtrl.signal,
           body: JSON.stringify(body),
         });
+        clearTimeout(cronFetchTimer);
 
         const data = await response.json();
 
